@@ -134,6 +134,25 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport syncer")
 	}
 
+	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+		Name:            "ServiceExport Uploader",
+		SourceClient:    syncerConf.LocalClient,
+		SourceNamespace: metav1.NamespaceAll,
+		RestMapper:      syncerConf.RestMapper,
+		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
+		ResourceType:    &mcsv1a1.ServiceExport{},
+		//Transform:        agentController.serviceExportToServiceImport,
+		//OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
+		Scheme: syncerConf.Scheme,
+		//SyncCounterOpts: &prometheus.GaugeOpts{
+		//	Name: syncerMetricNames.ServiceExportCounterName,
+		//	Help: "Count of exported services",
+		//},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating ServiceExport syncer")
+	}
+
 	agentController.serviceSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "Service deletion",
 		SourceClient:    syncerConf.LocalClient,
@@ -167,6 +186,10 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		return errors.Wrap(err, "error starting ServiceExport syncer")
 	}
 
+	if err := a.serviceExportUploader.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting ServiceExport uploader")
+	}
+
 	if err := a.serviceSyncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting Service syncer")
 	}
@@ -193,6 +216,17 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 			}
 		})
 	})
+
+	//a.serviceExportUploader.Reconcile(func() []runtime.Object {
+	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
+	//		return &mcsv1a1.ServiceExport{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
+	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
+	//			},
+	//		}
+	//	})
+	//})
 
 	a.serviceSyncer.Reconcile(func() []runtime.Object {
 		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {

@@ -37,6 +37,7 @@ type Controller struct {
 	kubeClientSet           kubernetes.Interface
 	serviceExportClient     dynamic.NamespaceableResourceInterface
 	serviceExportSyncer     syncer.Interface
+	serviceExportUploader   syncer.Interface
 	serviceImportSyncer     *broker.Syncer
 	endpointSliceSyncer     *broker.Syncer
 	serviceSyncer           syncer.Interface
