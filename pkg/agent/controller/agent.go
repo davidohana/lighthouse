@@ -385,6 +385,17 @@ func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syn
 		"Service was successfully synced to the broker")
 }
 
+func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syncer.Operation) {
+	if op == syncer.Delete {
+		return
+	}
+
+	serviceExport := synced.(*mcsv1a1.ServiceExport)
+
+	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
+		corev1.ConditionTrue, "", "ServiceExport was successfully synced to the broker")
+}
+
 func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Delete {
 		// Ignore create/update
