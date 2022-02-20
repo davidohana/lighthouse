@@ -142,8 +142,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		//Transform:        agentController.serviceExportToServiceImport,
-		//OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
-		Scheme: syncerConf.Scheme,
+		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
+		Scheme:           syncerConf.Scheme,
 		//SyncCounterOpts: &prometheus.GaugeOpts{
 		//	Name: syncerMetricNames.ServiceExportCounterName,
 		//	Help: "Count of exported services",
@@ -182,9 +182,9 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// Start the informer factories to begin populating the informer caches
 	klog.Info("Starting Agent controller")
 
-	if err := a.serviceExportSyncer.Start(stopCh); err != nil {
-		return errors.Wrap(err, "error starting ServiceExport syncer")
-	}
+	//if err := a.serviceExportSyncer.Start(stopCh); err != nil {
+	//	return errors.Wrap(err, "error starting ServiceExport syncer")
+	//}
 
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
@@ -206,16 +206,16 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
 
-	a.serviceExportSyncer.Reconcile(func() []runtime.Object {
-		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-			return &mcsv1a1.ServiceExport{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      si.GetAnnotations()[lhconstants.OriginName],
-					Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-				},
-			}
-		})
-	})
+	//a.serviceExportSyncer.Reconcile(func() []runtime.Object {
+	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
+	//		return &mcsv1a1.ServiceExport{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
+	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
+	//			},
+	//		}
+	//	})
+	//})
 
 	//a.serviceExportUploader.Reconcile(func() []runtime.Object {
 	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
