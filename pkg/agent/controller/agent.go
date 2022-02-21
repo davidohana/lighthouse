@@ -487,8 +487,11 @@ func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syn
 
 	serviceExport := synced.(*mcsv1a1.ServiceExport)
 
-	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
-		corev1.ConditionTrue, "", "ServiceExport was successfully synced to the broker")
+	a.updateExportedServiceStatus(
+		serviceExport.GetAnnotations()[lhconstants.OriginName],
+		serviceExport.GetAnnotations()[lhconstants.OriginNamespace],
+		corev1.ConditionTrue, "",
+		"ServiceExport was successfully synced to the broker")
 }
 
 func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
