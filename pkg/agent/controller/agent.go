@@ -140,6 +140,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		SourceNamespace:  metav1.NamespaceAll,
 		RestMapper:       syncerConf.RestMapper,
 		Federator:        agentController.serviceImportSyncer.GetBrokerFederator(),
+		Direction:        syncer.LocalToRemote,
 		ResourceType:     &mcsv1a1.ServiceExport{},
 		Transform:        agentController.serviceExportBrokerTransform,
 		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
@@ -516,7 +517,7 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 
 	// Update the status and requeue
 	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
-		"Service to be exported doesn't exist")
+		"Service to be exported was deleted")
 
 	return serviceImport, false
 }
