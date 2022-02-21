@@ -135,13 +135,13 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	}
 
 	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:            "ServiceExport Uploader",
-		SourceClient:    syncerConf.LocalClient,
-		SourceNamespace: metav1.NamespaceAll,
-		RestMapper:      syncerConf.RestMapper,
-		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
-		ResourceType:    &mcsv1a1.ServiceExport{},
-		//Transform:        agentController.serviceExportToServiceImport,
+		Name:             "ServiceExport Uploader",
+		SourceClient:     syncerConf.LocalClient,
+		SourceNamespace:  metav1.NamespaceAll,
+		RestMapper:       syncerConf.RestMapper,
+		Federator:        agentController.serviceImportSyncer.GetBrokerFederator(),
+		ResourceType:     &mcsv1a1.ServiceExport{},
+		Transform:        agentController.serviceExportBrokerTransform,
 		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
 		Scheme:           syncerConf.Scheme,
 		//SyncCounterOpts: &prometheus.GaugeOpts{
@@ -350,6 +350,100 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 	klog.V(log.DEBUG).Infof("Returning ServiceImport: %#v", serviceImport)
 
 	return serviceImport, false
+}
+
+func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+	svcExport := obj.(*mcsv1a1.ServiceExport)
+
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", svcExport.Namespace, svcExport.Name, op)
+
+	//if op == syncer.Delete {
+	//	return a.newServiceImport(svcExport.Name, svcExport.Namespace), false
+	//}
+
+	obj, found, err := a.serviceSyncer.GetResource(svcExport.Name, svcExport.Namespace)
+	if err != nil {
+		// some other error. Log and requeue
+		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
+			corev1.ConditionUnknown, "ServiceRetrievalFailed",
+			fmt.Sprintf("Error retrieving the Service: %v", err))
+		klog.Errorf("Error retrieving Service (%s/%s): %v", svcExport.Namespace, svcExport.Name, err)
+
+		return nil, true
+	}
+
+	if !found {
+		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", svcExport.Namespace, svcExport.Name)
+		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
+			"Service to be exported doesn't exist")
+
+		return nil, true
+	}
+
+	// todo: find out what this does
+	if op == syncer.Update && getLastExportConditionReason(svcExport) != serviceUnavailable {
+		return nil, false
+	}
+
+	//svc := obj.(*corev1.Service)
+
+	//svcType, ok := getServiceImportType(svc)
+
+	//if !ok {
+	//	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, invalidServiceType,
+	//		fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
+	//	klog.Errorf("Service type %q not supported", svc.Spec.Type)
+	//
+	//	return nil, false
+	//}
+
+	svcExport.Name = a.getObjectNameWithClusterID(svcExport.Name, svcExport.Namespace)
+
+	//serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
+
+	//serviceImport.Spec = mcsv1a1.ServiceImportSpec{
+	//	Ports:                 []mcsv1a1.ServicePort{},
+	//	Type:                  svcType,
+	//	SessionAffinityConfig: new(corev1.SessionAffinityConfig),
+	//}
+	//
+	//serviceImport.Status = mcsv1a1.ServiceImportStatus{
+	//	Clusters: []mcsv1a1.ClusterStatus{
+	//		{
+	//			Cluster: a.clusterID,
+	//		},
+	//	},
+	//}
+
+	//if svcType == mcsv1a1.ClusterSetIP {
+	//	if a.globalnetEnabled {
+	//		ip, reason, msg := a.getGlobalIP(svc)
+	//		if ip == "" {
+	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", svcExport.Namespace, svcExport.Name)
+	//			// Globalnet enabled but service doesn't have globalIp yet, Update the status and requeue
+	//			a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, reason, msg)
+	//
+	//			return nil, true
+	//		}
+	//
+	//		serviceImport.Spec.IPs = []string{ip}
+	//	} else {
+	//		serviceImport.Spec.IPs = []string{svc.Spec.ClusterIP}
+	//	}
+	//
+	//	serviceImport.Spec.Ports = a.getPortsForService(svc)
+	//	/* We also store the clusterIP in an annotation as an optimization to recover it in case the IPs are
+	//	cleared out when here's no backing Endpoint pods.
+	//	*/
+	//	serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
+	//}
+
+	//a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, "AwaitingSync",
+	//	"Awaiting sync of the ServiceImport to the broker")
+
+	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", svcExport)
+
+	return svcExport, false
 }
 
 func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
