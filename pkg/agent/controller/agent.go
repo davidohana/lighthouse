@@ -354,38 +354,38 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 }
 
 func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
-	serviceExport := obj.(*mcsv1a1.ServiceExport)
+	localServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", serviceExport.Namespace, serviceExport.Name, op)
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", localServiceExport.Namespace, localServiceExport.Name, op)
 
-	brokerServiceExport := a.newServiceExport(serviceExport.Name, serviceExport.Namespace)
+	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 	if op == syncer.Delete {
 		// need to convert name to full name so that resource_syncer can find the resource
 		// on the broker and delete it
 		return brokerServiceExport, false
 	}
 
-	obj, found, err := a.serviceSyncer.GetResource(serviceExport.Name, serviceExport.Namespace)
+	obj, found, err := a.serviceSyncer.GetResource(localServiceExport.Name, localServiceExport.Namespace)
 	if err != nil {
 		// some other error. Log and requeue
-		a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
+		a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
 			corev1.ConditionUnknown, "ServiceRetrievalFailed",
 			fmt.Sprintf("Error retrieving the Service: %v", err))
-		klog.Errorf("Error retrieving Service (%s/%s): %v", serviceExport.Namespace, serviceExport.Name, err)
+		klog.Errorf("Error retrieving Service (%s/%s): %v", localServiceExport.Namespace, localServiceExport.Name, err)
 
 		return nil, true
 	}
 
 	if !found {
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", serviceExport.Namespace, serviceExport.Name)
-		a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
+		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", localServiceExport.Namespace, localServiceExport.Name)
+		a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
 			"Service to be exported doesn't exist")
 
 		return nil, true
 	}
 
 	// todo: find out what this does
-	if op == syncer.Update && getLastExportConditionReason(serviceExport) != serviceUnavailable {
+	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != serviceUnavailable {
 		return nil, false
 	}
 
@@ -394,14 +394,14 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//svcType, ok := getServiceImportType(svc)
 
 	//if !ok {
-	//	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, invalidServiceType,
+	//	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, invalidServiceType,
 	//		fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 	//	klog.Errorf("Service type %q not supported", svc.Spec.Type)
 	//
 	//	return nil, false
 	//}
 
-	//serviceImport := a.newServiceImport(serviceExport.Name, serviceExport.Namespace)
+	//serviceImport := a.newServiceImport(localServiceExport.Name, localServiceExport.Namespace)
 
 	//serviceImport.Spec = mcsv1a1.ServiceImportSpec{
 	//	Ports:                 []mcsv1a1.ServicePort{},
@@ -421,9 +421,9 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	if a.globalnetEnabled {
 	//		ip, reason, msg := a.getGlobalIP(svc)
 	//		if ip == "" {
-	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", serviceExport.Namespace, serviceExport.Name)
+	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", localServiceExport.Namespace, localServiceExport.Name)
 	//			// Globalnet enabled but service doesn't have globalIp yet, Update the status and requeue
-	//			a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, reason, msg)
+	//			a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, reason, msg)
 	//
 	//			return nil, true
 	//		}
@@ -440,13 +440,13 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
 	//}
 
-	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
+	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
 		corev1.ConditionFalse, "AwaitingSync",
 		"Awaiting sync of the ServiceExport to the broker")
 
 	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", brokerServiceExport)
 
-	return serviceExport, false
+	return brokerServiceExport, false
 }
 
 func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
