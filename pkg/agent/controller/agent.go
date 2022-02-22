@@ -354,35 +354,38 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 }
 
 func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
-	svcExport := obj.(*mcsv1a1.ServiceExport)
+	serviceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", svcExport.Namespace, svcExport.Name, op)
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", serviceExport.Namespace, serviceExport.Name, op)
 
-	//if op == syncer.Delete {
-	//	return a.newServiceImport(svcExport.Name, svcExport.Namespace), false
-	//}
+	brokerServiceExport := a.newServiceExport(serviceExport.Name, serviceExport.Namespace)
+	if op == syncer.Delete {
+		// need to convert name to full name so that resource_syncer can find the resource
+		// on the broker and delete it
+		return brokerServiceExport, false
+	}
 
-	obj, found, err := a.serviceSyncer.GetResource(svcExport.Name, svcExport.Namespace)
+	obj, found, err := a.serviceSyncer.GetResource(serviceExport.Name, serviceExport.Namespace)
 	if err != nil {
 		// some other error. Log and requeue
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
+		a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
 			corev1.ConditionUnknown, "ServiceRetrievalFailed",
 			fmt.Sprintf("Error retrieving the Service: %v", err))
-		klog.Errorf("Error retrieving Service (%s/%s): %v", svcExport.Namespace, svcExport.Name, err)
+		klog.Errorf("Error retrieving Service (%s/%s): %v", serviceExport.Namespace, serviceExport.Name, err)
 
 		return nil, true
 	}
 
 	if !found {
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", svcExport.Namespace, svcExport.Name)
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
+		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", serviceExport.Namespace, serviceExport.Name)
+		a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
 			"Service to be exported doesn't exist")
 
 		return nil, true
 	}
 
 	// todo: find out what this does
-	if op == syncer.Update && getLastExportConditionReason(svcExport) != serviceUnavailable {
+	if op == syncer.Update && getLastExportConditionReason(serviceExport) != serviceUnavailable {
 		return nil, false
 	}
 
@@ -391,26 +394,14 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//svcType, ok := getServiceImportType(svc)
 
 	//if !ok {
-	//	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, invalidServiceType,
+	//	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, invalidServiceType,
 	//		fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 	//	klog.Errorf("Service type %q not supported", svc.Spec.Type)
 	//
 	//	return nil, false
 	//}
 
-	svcExport.Annotations = map[string]string{
-		lhconstants.OriginName:      svcExport.Name,
-		lhconstants.OriginNamespace: svcExport.Namespace,
-	}
-	svcExport.Labels = map[string]string{
-		lhconstants.LighthouseLabelSourceName:    svcExport.Name,
-		lhconstants.LabelSourceNamespace:         svcExport.Namespace,
-		lhconstants.LighthouseLabelSourceCluster: a.clusterID,
-	}
-	originName := svcExport.Name
-	svcExport.Name = a.getObjectNameWithClusterID(svcExport.Name, svcExport.Namespace)
-
-	//serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
+	//serviceImport := a.newServiceImport(serviceExport.Name, serviceExport.Namespace)
 
 	//serviceImport.Spec = mcsv1a1.ServiceImportSpec{
 	//	Ports:                 []mcsv1a1.ServicePort{},
@@ -430,9 +421,9 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	if a.globalnetEnabled {
 	//		ip, reason, msg := a.getGlobalIP(svc)
 	//		if ip == "" {
-	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", svcExport.Namespace, svcExport.Name)
+	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", serviceExport.Namespace, serviceExport.Name)
 	//			// Globalnet enabled but service doesn't have globalIp yet, Update the status and requeue
-	//			a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, reason, msg)
+	//			a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace, corev1.ConditionFalse, reason, msg)
 	//
 	//			return nil, true
 	//		}
@@ -449,13 +440,13 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
 	//}
 
-	a.updateExportedServiceStatus(originName, svcExport.Namespace,
+	a.updateExportedServiceStatus(serviceExport.Name, serviceExport.Namespace,
 		corev1.ConditionFalse, "AwaitingSync",
 		"Awaiting sync of the ServiceExport to the broker")
 
-	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", svcExport)
+	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", brokerServiceExport)
 
-	return svcExport, false
+	return serviceExport, false
 }
 
 func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
@@ -607,6 +598,23 @@ func (a *Controller) getServiceExport(name, namespace string) (*mcsv1a1.ServiceE
 func serviceExportConditionEqual(c1, c2 *mcsv1a1.ServiceExportCondition) bool {
 	return c1.Type == c2.Type && c1.Status == c2.Status && reflect.DeepEqual(c1.Reason, c2.Reason) &&
 		reflect.DeepEqual(c1.Message, c2.Message)
+}
+
+func (a *Controller) newServiceExport(name, namespace string) *mcsv1a1.ServiceExport {
+	return &mcsv1a1.ServiceExport{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: a.getObjectNameWithClusterID(name, namespace),
+			Annotations: map[string]string{
+				lhconstants.OriginName:      name,
+				lhconstants.OriginNamespace: namespace,
+			},
+			Labels: map[string]string{
+				lhconstants.LighthouseLabelSourceName:    name,
+				lhconstants.LabelSourceNamespace:         namespace,
+				lhconstants.LighthouseLabelSourceCluster: a.clusterID,
+			},
+		},
+	}
 }
 
 func (a *Controller) newServiceImport(name, namespace string) *mcsv1a1.ServiceImport {
