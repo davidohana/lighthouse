@@ -398,6 +398,15 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	return nil, false
 	//}
 
+	svcExport.Annotations = map[string]string{
+		lhconstants.OriginName:      svcExport.Name,
+		lhconstants.OriginNamespace: svcExport.Namespace,
+	}
+	svcExport.Labels = map[string]string{
+		lhconstants.LighthouseLabelSourceName:    svcExport.Name,
+		lhconstants.LabelSourceNamespace:         svcExport.Namespace,
+		lhconstants.LighthouseLabelSourceCluster: a.clusterID,
+	}
 	svcExport.Name = a.getObjectNameWithClusterID(svcExport.Name, svcExport.Namespace)
 
 	//serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
