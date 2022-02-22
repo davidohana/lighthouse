@@ -407,6 +407,7 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 		lhconstants.LabelSourceNamespace:         svcExport.Namespace,
 		lhconstants.LighthouseLabelSourceCluster: a.clusterID,
 	}
+	originName := svcExport.Name
 	svcExport.Name = a.getObjectNameWithClusterID(svcExport.Name, svcExport.Namespace)
 
 	//serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
@@ -448,8 +449,9 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	//	serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
 	//}
 
-	//a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, "AwaitingSync",
-	//	"Awaiting sync of the ServiceImport to the broker")
+	a.updateExportedServiceStatus(originName, svcExport.Namespace,
+		corev1.ConditionFalse, "AwaitingSync",
+		"Awaiting sync of the ServiceExport to the broker")
 
 	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", svcExport)
 
