@@ -159,9 +159,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		SourceClient:    syncerConf.LocalClient,
 		SourceNamespace: metav1.NamespaceAll,
 		RestMapper:      syncerConf.RestMapper,
-		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
+		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
 		ResourceType:    &corev1.Service{},
-		Transform:       agentController.serviceToRemoteServiceImport,
+		Transform:       agentController.serviceToRemoteServiceExport,
 		Scheme:          syncerConf.Scheme,
 	})
 	if err != nil {
@@ -496,7 +496,7 @@ func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syn
 		"ServiceExport was successfully synced to the broker")
 }
 
-func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Delete {
 		// Ignore create/update
 		return nil, false
@@ -505,7 +505,7 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	svc := obj.(*corev1.Service)
 	klog.V(log.DEBUG).Infof("Service deleted: %s/%s", svc.Name, svc.Namespace)
 
-	obj, found, err := a.serviceExportSyncer.GetResource(svc.Name, svc.Namespace)
+	obj, found, err := a.serviceExportUploader.GetResource(svc.Name, svc.Namespace)
 	if err != nil {
 		// some other error. Log and requeue
 		klog.Errorf("Error retrieving ServiceExport for Service (%s/%s): %v", svc.Namespace, svc.Name, err)
@@ -517,17 +517,18 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 		return nil, false
 	}
 
-	svcExport := obj.(*mcsv1a1.ServiceExport)
+	localServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s", svcExport.Name, svcExport.Namespace)
+	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s", localServiceExport.Name, localServiceExport.Namespace)
 
-	serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
+	// rename to service export to expected name on broker so that federator can find and delete it
+	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 
 	// Update the status and requeue
-	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
-		"Service to be exported was deleted")
+	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
+		corev1.ConditionFalse, serviceUnavailable, "Service to be exported was deleted")
 
-	return serviceImport, false
+	return brokerServiceExport, false
 }
 
 func (a *Controller) updateExportedServiceStatus(name, namespace string, status corev1.ConditionStatus, reason, msg string) {
