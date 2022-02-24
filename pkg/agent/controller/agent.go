@@ -503,7 +503,7 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	}
 
 	svc := obj.(*corev1.Service)
-	klog.V(log.DEBUG).Infof("Service deleted:  %s/%s %sd", svc.Name, svc.Namespace)
+	klog.V(log.DEBUG).Infof("Service deleted: %s/%s", svc.Name, svc.Namespace)
 
 	obj, found, err := a.serviceExportSyncer.GetResource(svc.Name, svc.Namespace)
 	if err != nil {
@@ -518,6 +518,8 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	}
 
 	svcExport := obj.(*mcsv1a1.ServiceExport)
+
+	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s", svcExport.Name, svcExport.Namespace)
 
 	serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
 
