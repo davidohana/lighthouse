@@ -503,6 +503,7 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	}
 
 	svc := obj.(*corev1.Service)
+	klog.V(log.DEBUG).Infof("Service deleted:  %s/%s %sd", svc.Name, svc.Namespace)
 
 	obj, found, err := a.serviceExportSyncer.GetResource(svc.Name, svc.Namespace)
 	if err != nil {
