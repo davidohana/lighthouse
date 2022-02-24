@@ -513,7 +513,7 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	}
 
 	if !found {
-		// Service Export not created yet
+		klog.V(log.DEBUG).Infof("ServiceExport not found for deleted service: %s/%s", svc.Namespace, svc.Name, err
 		return nil, false
 	}
 
