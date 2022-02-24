@@ -382,9 +382,11 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 	}
 
 	if !found {
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", localServiceExport.Namespace, localServiceExport.Name)
-		a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
-			"Service to be exported doesn't exist")
+		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist, will not upload",
+			localServiceExport.Namespace, localServiceExport.Name)
+		//a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
+		//	corev1.ConditionFalse, serviceUnavailable,
+		//	"Service to be exported doesn't exist")
 
 		return nil, true
 	}
