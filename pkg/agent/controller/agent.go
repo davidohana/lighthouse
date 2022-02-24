@@ -354,6 +354,11 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 }
 
 func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+	if op == syncer.Update {
+		// Ignore update because status is not synced to broker anyway
+		return nil, false
+	}
+
 	localServiceExport := obj.(*mcsv1a1.ServiceExport)
 
 	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", localServiceExport.Namespace, localServiceExport.Name, op)
@@ -384,10 +389,9 @@ func (a *Controller) serviceExportBrokerTransform(obj runtime.Object, numRequeue
 		return nil, true
 	}
 
-	// todo: find out what this does
-	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != serviceUnavailable {
-		return nil, false
-	}
+	//if op == syncer.Update && getLastExportConditionReason(localServiceExport) != serviceUnavailable {
+	//	return nil, false
+	//}
 
 	//svc := obj.(*corev1.Service)
 
@@ -519,7 +523,8 @@ func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, numRequeue
 
 	localServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s", localServiceExport.Name, localServiceExport.Namespace)
+	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s, will delete broker's copy",
+		localServiceExport.Name, localServiceExport.Namespace)
 
 	// rename to service export to expected name on broker so that federator can find and delete it
 	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
