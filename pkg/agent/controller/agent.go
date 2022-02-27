@@ -157,7 +157,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	agentController.serviceExportStatusDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceExport.Status Downloader",
 		SourceClient:    syncerConf.BrokerClient,
-		SourceNamespace: syncerConf.BrokerNamespace,
+		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
 		Direction:       syncer.RemoteToLocal,
