@@ -154,10 +154,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport uploader")
 	}
 
-	klog.Infof("broker NS: %s", agentController.endpointSliceSyncer.GetBrokerNamespace())
 	agentController.serviceExportStatusDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceExport.Status Downloader",
-		SourceClient:    syncerConf.BrokerClient,
+		SourceClient:    agentController.endpointSliceSyncer.GetBrokerClient(),
 		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
