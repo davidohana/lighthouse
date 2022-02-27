@@ -36,6 +36,44 @@ NAME         TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)    AGE
 monti-host   ClusterIP   100.0.68.66   <none>        8091/TCP   7m56s
 ```
 
+```yaml
+-> % kubectl get services -n monti -o yaml
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"monti-host","namespace":"monti"},"spec":{"ports":[{"port":8091,"protocol":"TCP","targetPort":8090}],"selector":{"app":"monti-server"}}}
+    creationTimestamp: "2022-02-16T14:52:33Z"
+    name: monti-host
+    namespace: monti
+    resourceVersion: "4063"
+    uid: 8ee132d1-1857-4b3e-9780-c6e10e1702d1
+  spec:
+    clusterIP: 100.0.103.24
+    clusterIPs:
+    - 100.0.103.24
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - port: 8091
+      protocol: TCP
+      targetPort: 8090
+    selector:
+      app: monti-server
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""
+```
+
 4. Endpoints and Endpoint Slice is created by k8s for service on cluster1 NS `monti`
 
 ```
