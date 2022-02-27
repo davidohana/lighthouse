@@ -160,7 +160,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
-		Direction:       syncer.RemoteToLocal,
+		LocalClusterID:  spec.ClusterID,
+		Direction:       syncer.LocalToRemote, // will filter out objects of other clusters
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		Transform:       agentController.serviceExportDownloadTransform,
 		Scheme:          syncerConf.Scheme,
