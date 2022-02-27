@@ -142,7 +142,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		Federator:        agentController.serviceImportSyncer.GetBrokerFederator(),
 		Direction:        syncer.LocalToRemote,
 		ResourceType:     &mcsv1a1.ServiceExport{},
-		Transform:        agentController.serviceExportLocalToBrokerTransform,
+		Transform:        agentController.serviceExportUploadTransform,
 		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
 		Scheme:           syncerConf.Scheme,
 		//SyncCounterOpts: &prometheus.GaugeOpts{
@@ -162,7 +162,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
 		Direction:       syncer.RemoteToLocal,
 		ResourceType:    &mcsv1a1.ServiceExport{},
-		Transform:       agentController.serviceExportBrokerToLocalTransform,
+		Transform:       agentController.serviceExportDownloadTransform,
 		Scheme:          syncerConf.Scheme,
 		//SyncCounterOpts: &prometheus.GaugeOpts{
 		//	Name: syncerMetricNames.ServiceExportCounterName,
@@ -377,7 +377,7 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 	return serviceImport, false
 }
 
-func (a *Controller) serviceExportLocalToBrokerTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportUploadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op == syncer.Update {
 		// Ignore update because status is not synced to broker anyway
 		return nil, false
@@ -479,7 +479,7 @@ func (a *Controller) serviceExportLocalToBrokerTransform(obj runtime.Object, num
 	return brokerServiceExport, false
 }
 
-func (a *Controller) serviceExportBrokerToLocalTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Update {
 		// we only care about status updates
 		return nil, false
@@ -487,7 +487,7 @@ func (a *Controller) serviceExportBrokerToLocalTransform(obj runtime.Object, num
 
 	brokerServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on Broker %sd", brokerServiceExport.Namespace, brokerServiceExport.Name, op)
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on broker %sd", brokerServiceExport.Namespace, brokerServiceExport.Name, op)
 
 	conflictCondition := getServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
 	if conflictCondition == nil {
