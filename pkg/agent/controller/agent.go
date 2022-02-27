@@ -161,7 +161,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
 		LocalClusterID:  spec.ClusterID,
-		Direction:       syncer.LocalToRemote, // will filter out objects of other clusters
+		Direction:       syncer.None, // will filter out objects of other clusters
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		Transform:       agentController.serviceExportDownloadTransform,
 		Scheme:          syncerConf.Scheme,
