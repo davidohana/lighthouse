@@ -161,7 +161,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
 		LocalClusterID:  spec.ClusterID,
-		Direction:       syncer.None, // will filter out objects of other clusters
+		Direction:       syncer.None, // handle filtering of exports manually in transform func
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		Transform:       agentController.serviceExportDownloadTransform,
 		Scheme:          syncerConf.Scheme,
@@ -488,7 +488,13 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numReque
 
 	brokerServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on broker %sd", brokerServiceExport.Namespace, brokerServiceExport.Name, op)
+	// we only care about service exports originating from the local cluster
+	if brokerServiceExport.GetLabels()[lhconstants.LighthouseLabelSourceCluster] != a.clusterID {
+		return nil, false
+	}
+
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on broker %sd",
+		brokerServiceExport.Namespace, brokerServiceExport.Name, op)
 
 	conflictCondition := getServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
 	if conflictCondition == nil {
