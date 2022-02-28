@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -35,23 +36,33 @@ import (
 )
 
 func main() {
+	condType := string(mcsv1a1.ServiceExportConflict)
+	condReason := "default reason"
+	condMsg := "deafult message"
+	condStatus := string(corev1.ConditionTrue)
+
+	seNamespace := "submariner-k8s-broker"
+	seName := "svc1-ns1-cluster1"
+
+	flagset := flag.CommandLine
+	flagset.StringVar(&condType, "type", condType, "condition type")
+	flagset.StringVar(&condReason, "reason", condType, "condition reason")
+	flagset.StringVar(&condMsg, "message", condType, "condition message")
+	flagset.StringVar(&condStatus, "status", condType, "condition status")
+	flagset.StringVar(&seNamespace, "status", condType, "namespace of service export")
+	flagset.StringVar(&seName, "name", condType, "name of service export")
+	flag.Parse()
+
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
 	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	panicOnError(err)
 
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// create the clientset
 	clientset, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		panic(err.Error())
-	}
+	panicOnError(err)
+
 	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
+	panicOnError(err)
 	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
 
 	err = mcsv1a1.AddToScheme(scheme.Scheme)
@@ -69,24 +80,19 @@ func main() {
 	gvr, err := util.FindGroupVersionResource(to, restMapper)
 	panicOnError(err)
 
-	ns := "submariner-k8s-broker"
-	name := "monti-host-monti-cluster1"
-
 	serviceExportClient := dynClient.Resource(*gvr)
-	serviceExport, err := getServiceExport(serviceExportClient, name, ns)
+	serviceExport, err := getServiceExport(serviceExportClient, seName, seNamespace)
 	panicOnError(err)
 
 	fmt.Printf("found %d conditions in ServiceExport\n", len(serviceExport.Status.Conditions))
 
 	now := metav1.Now()
-	statusReason := "conflict reason1"
-	statusMessage := "conflig msg1"
 	exportCondition := mcsv1a1.ServiceExportCondition{
-		Type:               mcsv1a1.ServiceExportConflict,
-		Status:             corev1.ConditionTrue,
 		LastTransitionTime: &now,
-		Reason:             &statusReason,
-		Message:            &statusMessage,
+		Type:               mcsv1a1.ServiceExportConditionType(condType),
+		Status:             corev1.ConditionStatus(condStatus),
+		Reason:             &condReason,
+		Message:            &condMsg,
 	}
 
 	serviceExport.Status.Conditions = append(serviceExport.Status.Conditions, exportCondition)
@@ -95,7 +101,7 @@ func main() {
 	raw, err := resource.ToUnstructured(serviceExport)
 	panicOnError(err)
 
-	_, err = serviceExportClient.Namespace(ns).UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
+	_, err = serviceExportClient.Namespace(seNamespace).UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
 	panicOnError(err)
 
 	println("done")
