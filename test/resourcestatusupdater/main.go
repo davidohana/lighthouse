@@ -43,15 +43,21 @@ func main() {
 
 	seNamespace := "submariner-k8s-broker"
 	seName := "svc1-ns1-cluster1"
+	help := false
 
 	flagset := flag.CommandLine
+	flagset.BoolVar(&help, "help", help, "show help")
 	flagset.StringVar(&condType, "type", condType, "condition type")
-	flagset.StringVar(&condReason, "reason", condType, "condition reason")
-	flagset.StringVar(&condMsg, "message", condType, "condition message")
-	flagset.StringVar(&condStatus, "status", condType, "condition status")
-	flagset.StringVar(&seNamespace, "status", condType, "namespace of service export")
-	flagset.StringVar(&seName, "name", condType, "name of service export")
+	flagset.StringVar(&condReason, "reason", condReason, "condition reason")
+	flagset.StringVar(&condMsg, "message", condMsg, "condition message")
+	flagset.StringVar(&condStatus, "status", condStatus, "condition status")
+	flagset.StringVar(&seNamespace, "namespace", seNamespace, "namespace of service export")
+	flagset.StringVar(&seName, "name", seName, "name of service export")
 	flag.Parse()
+	if help {
+		flag.PrintDefaults()
+		return
+	}
 
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
