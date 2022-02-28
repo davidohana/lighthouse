@@ -20,70 +20,105 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"path/filepath"
-	"time"
+	"k8s.io/client-go/kubernetes/scheme"
 
+	"github.com/pkg/errors"
+	"github.com/submariner-io/admiral/pkg/resource"
+	"github.com/submariner-io/admiral/pkg/util"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/openstack"
+	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
 func main() {
-	var kubeconfig *string
-	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-	flag.Parse()
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
+	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
 
-	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	// create the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		panic(err.Error())
 	}
-	for {
-		pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			panic(err.Error())
-		}
-		fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
 
-		// Examples for error handling:
-		// - Use helper functions like e.g. errors.IsNotFound()
-		// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-		//namespace := "default"
-		//pod := "example-xxxxx"
-		//_, err = clientset.CoreV1().Pods(namespace).Get(context.TODO(), pod, metav1.GetOptions{})
-		//if errors.IsNotFound(err) {
-		//	fmt.Printf("Pod %s in namespace %s not found\n", pod, namespace)
-		//} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-		//	fmt.Printf("Error getting pod %s in namespace %s: %v\n",
-		//		pod, namespace, statusError.ErrStatus.Message)
-		//} else if err != nil {
-		//	panic(err.Error())
-		//} else {
-		//	fmt.Printf("Found pod %s in namespace %s\n", pod, namespace)
-		//}
+	err = mcsv1a1.AddToScheme(scheme.Scheme)
+	panicOnError(err)
 
-		time.Sleep(10 * time.Second)
+	dynClient, err := dynamic.NewForConfig(restConfig)
+	panicOnError(err)
+
+	restMapper, err := util.BuildRestMapper(restConfig)
+	panicOnError(err)
+
+	to, err := resource.ToUnstructured(&mcsv1a1.ServiceExport{})
+	panicOnError(err)
+
+	gvr, err := util.FindGroupVersionResource(to, restMapper)
+	panicOnError(err)
+
+	ns := "submariner-k8s-broker"
+	name := "monti-host-monti-cluster1"
+
+	serviceExportClient := dynClient.Resource(*gvr)
+	serviceExport, err := getServiceExport(serviceExportClient, name, ns)
+	panicOnError(err)
+
+	fmt.Printf("found %d conditions in ServiceExport\n", len(serviceExport.Status.Conditions))
+
+	now := metav1.Now()
+	statusReason := "conflict reason1"
+	statusMessage := "conflig msg1"
+	exportCondition := mcsv1a1.ServiceExportCondition{
+		Type:               mcsv1a1.ServiceExportConflict,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: &now,
+		Reason:             &statusReason,
+		Message:            &statusMessage,
+	}
+
+	serviceExport.Status.Conditions = append(serviceExport.Status.Conditions, exportCondition)
+	fmt.Printf("now: %d conditions in ServiceExport\n", len(serviceExport.Status.Conditions))
+
+	raw, err := resource.ToUnstructured(serviceExport)
+	panicOnError(err)
+
+	_, err = serviceExportClient.Namespace(ns).UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
+	panicOnError(err)
+
+	println("done")
+}
+
+func getServiceExport(serviceExportClient dynamic.NamespaceableResourceInterface, name, namespace string) (*mcsv1a1.ServiceExport, error) {
+	obj, err := serviceExportClient.Namespace(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "error retrieving ServiceExport")
+	}
+
+	se := &mcsv1a1.ServiceExport{}
+
+	err = scheme.Scheme.Convert(obj, se, nil)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "Error converting %#v to ServiceExport", obj)
+	}
+
+	return se, nil
+}
+
+func panicOnError(err error) {
+	if err != nil {
+		panic(err.Error())
 	}
 }

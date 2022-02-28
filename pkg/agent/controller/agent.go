@@ -504,9 +504,13 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numReque
 		return nil, false
 	}
 
-	// update conflict status to reflect broker's state. use own clock instead of broker's clock
-	// for time consistency with other status updates
-	a.updateExportedServiceStatus(brokerServiceExport.Name, brokerServiceExport.Namespace,
+	annotations := brokerServiceExport.GetAnnotations()
+	originName := annotations[lhconstants.OriginName]
+	originNamespace := annotations[lhconstants.OriginNamespace]
+
+	// update conflict status in local service export to reflect broker's state.
+	// use own clock instead of broker's clock for time consistency with other status updates
+	a.updateExportedServiceStatus(originName, originNamespace,
 		conflictCondition.Status, *conflictCondition.Reason, *conflictCondition.Message)
 
 	return nil, false
