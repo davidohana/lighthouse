@@ -59,6 +59,10 @@ func main() {
 		return
 	}
 
+	flag.VisitAll(func(f *flag.Flag) {
+		fmt.Printf("arg: %s: %s\n", f.Name, f.Value)
+	})
+
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
 	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
