@@ -136,6 +136,11 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	//	return nil, errors.Wrap(err, "error creating ServiceExport syncer")
 	//}
 
+	// This syncer will:
+	// - Upload local service exports to the broker (only if service exist)
+	// - Add labels and annotations to preserve information out of schema
+	// - Update the service export on the broker when there is a local update
+	// - Delete the service export on the broker when local service export is deleted
 	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:             "ServiceExport Uploader",
 		SourceClient:     syncerConf.LocalClient,
@@ -156,6 +161,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport uploader")
 	}
 
+	// this syncer downloads conflict condition status of service exports from the broker and merge it
+	// into the local service export
 	agentController.serviceExportStatusDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceExport.Status Downloader",
 		SourceClient:    agentController.endpointSliceSyncer.GetBrokerClient(),
@@ -176,6 +183,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
 	}
 
+	// this syncer will delete service exports at the broker when the correlated local service is deleted
 	agentController.serviceSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "Service deletion",
 		SourceClient:    syncerConf.LocalClient,
@@ -246,18 +254,18 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	//	})
 	//})
 
-	// check on startup if local service still exist for the local service imports.
-	// enqueue deletion of service if not, to delete obsolete service import
-	a.serviceSyncer.Reconcile(func() []runtime.Object {
-		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-			return &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      si.GetAnnotations()[lhconstants.OriginName],
-					Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-				},
-			}
-		})
-	})
+	// check on startup if a local service still exist for all local service imports.
+	// if not - enqueue deletion of the service, to delete obsolete service import
+	//a.serviceSyncer.Reconcile(func() []runtime.Object {
+	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
+	//		return &corev1.Service{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
+	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
+	//			},
+	//		}
+	//	})
+	//})
 
 	klog.Info("Agent controller started")
 
