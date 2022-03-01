@@ -143,6 +143,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	// - Delete the service export on the broker when local service export is deleted
 	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:             "ServiceExport Uploader",
+		LocalClusterID:   spec.ClusterID,
 		SourceClient:     syncerConf.LocalClient,
 		SourceNamespace:  metav1.NamespaceAll,
 		RestMapper:       syncerConf.RestMapper,
@@ -165,11 +166,11 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	// into the local service export
 	agentController.serviceExportStatusDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceExport.Status Downloader",
+		LocalClusterID:  spec.ClusterID,
 		SourceClient:    agentController.endpointSliceSyncer.GetBrokerClient(),
 		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
-		LocalClusterID:  spec.ClusterID,
 		Direction:       syncer.None, // handle filtering of exports manually in transform func
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		Transform:       agentController.serviceExportDownloadTransform,
