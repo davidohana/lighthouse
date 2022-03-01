@@ -257,19 +257,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
-		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
-			// only care about service exports that originated from this cluster
-			if !a.isRemoteServiceExportOwned(se) {
-				return nil
-			}
-			annotations := se.GetAnnotations()
-			return &mcsv1a1.ServiceExport{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      annotations[lhconstants.OriginName],
-					Namespace: annotations[lhconstants.OriginNamespace],
-				},
-			}
-		})
+		return a.remoteServiceExportLister(nil)
 	})
 
 	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
@@ -312,7 +300,12 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 	for _, obj := range brokerSeList {
 		si := obj.(*mcsv1a1.ServiceExport)
 
-		transformed := transform(si)
+		var transformed runtime.Object
+		if transform == nil {
+			transformed = si
+		} else {
+			transformed = transform(si)
+		}
 		if transformed != nil {
 			retList = append(retList, transformed)
 		}
