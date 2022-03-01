@@ -298,13 +298,13 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 	retList := make([]runtime.Object, 0, len(brokerSeList))
 
 	for _, obj := range brokerSeList {
-		si := obj.(*mcsv1a1.ServiceExport)
+		se := obj.(*mcsv1a1.ServiceExport)
 
 		var transformed runtime.Object
 		if transform == nil {
-			transformed = si
+			transformed = se
 		} else {
-			transformed = transform(si)
+			transformed = transform(se)
 		}
 		if transformed != nil {
 			retList = append(retList, transformed)
