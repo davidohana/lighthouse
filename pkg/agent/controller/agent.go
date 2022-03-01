@@ -254,24 +254,56 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	//	})
 	//})
 
-	// check on startup if a local service still exist for all local service imports.
-	// if not - enqueue deletion of the service, to delete obsolete service import
-	//a.serviceSyncer.Reconcile(func() []runtime.Object {
-	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-	//		return &corev1.Service{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
-	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-	//			},
-	//		}
-	//	})
-	//})
+	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
+	// if not - enqueue deletion of the service, to delete obsolete service export from the broker
+	a.serviceSyncer.Reconcile(func() []runtime.Object {
+		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
+			// only care about service exports that originated from this cluster
+			if !a.isRemoteServiceExportOwned(se) {
+				return nil
+			}
+			annotations := se.GetAnnotations()
+			return &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      annotations[lhconstants.OriginName],
+					Namespace: annotations[lhconstants.OriginNamespace],
+				},
+			}
+		})
+	})
 
 	klog.Info("Agent controller started")
 
 	return nil
 }
 
+func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.ServiceExport) runtime.Object) []runtime.Object {
+	klog.Infof("listing broker's ServiceExports")
+
+	brokerSeList, err := a.serviceExportStatusDownloader.ListResources()
+
+	if err != nil {
+		klog.Errorf("Error listing broker's ServiceExports: %v", err)
+		return nil
+	}
+
+	klog.Infof("listing broker's ServiceExports: %d found", len(brokerSeList))
+
+	retList := make([]runtime.Object, 0, len(brokerSeList))
+
+	for _, obj := range brokerSeList {
+		si := obj.(*mcsv1a1.ServiceExport)
+
+		transformed := transform(si)
+		if transformed != nil {
+			retList = append(retList, transformed)
+		}
+	}
+
+	klog.Infof("listing broker's ServiceExports: %d returned", len(retList))
+
+	return retList
+}
 func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImport) runtime.Object) []runtime.Object {
 	siList, err := a.serviceImportSyncer.ListLocalResources(&mcsv1a1.ServiceImport{})
 	if err != nil {
@@ -487,6 +519,11 @@ func (a *Controller) serviceExportUploadTransform(obj runtime.Object, numRequeue
 	return brokerServiceExport, false
 }
 
+// check whether a broker's service export originates from the local cluster
+func (a *Controller) isRemoteServiceExportOwned(se *mcsv1a1.ServiceExport) bool {
+	return se.GetLabels()[lhconstants.LighthouseLabelSourceCluster] == a.clusterID
+}
+
 func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Update {
 		// we only care about status updates
@@ -496,7 +533,7 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numReque
 	brokerServiceExport := obj.(*mcsv1a1.ServiceExport)
 
 	// we only care about service exports originating from the local cluster
-	if brokerServiceExport.GetLabels()[lhconstants.LighthouseLabelSourceCluster] != a.clusterID {
+	if !a.isRemoteServiceExportOwned(brokerServiceExport) {
 		return nil, false
 	}
 
