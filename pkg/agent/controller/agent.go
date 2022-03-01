@@ -50,8 +50,10 @@ const (
 )
 
 type AgentConfig struct {
-	ServiceImportCounterName string
-	ServiceExportCounterName string
+	ServiceImportCounterName                string
+	ServiceExportCounterName                string
+	ServiceExportUploadsCounterName         string
+	ServiceExportStatusDownloadsCounterName string
 }
 
 var MaxExportStatusConditions = 10
@@ -115,24 +117,24 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating EndpointSlice syncer")
 	}
 
-	agentController.serviceExportSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:             "ServiceExport -> ServiceImport",
-		SourceClient:     syncerConf.LocalClient,
-		SourceNamespace:  metav1.NamespaceAll,
-		RestMapper:       syncerConf.RestMapper,
-		Federator:        agentController.serviceImportSyncer.GetLocalFederator(),
-		ResourceType:     &mcsv1a1.ServiceExport{},
-		Transform:        agentController.serviceExportToServiceImport,
-		OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
-		Scheme:           syncerConf.Scheme,
-		SyncCounterOpts: &prometheus.GaugeOpts{
-			Name: syncerMetricNames.ServiceExportCounterName,
-			Help: "Count of exported services",
-		},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "error creating ServiceExport syncer")
-	}
+	//agentController.serviceExportSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+	//	Name:             "ServiceExport -> ServiceImport",
+	//	SourceClient:     syncerConf.LocalClient,
+	//	SourceNamespace:  metav1.NamespaceAll,
+	//	RestMapper:       syncerConf.RestMapper,
+	//	Federator:        agentController.serviceImportSyncer.GetLocalFederator(),
+	//	ResourceType:     &mcsv1a1.ServiceExport{},
+	//	Transform:        agentController.serviceExportToServiceImport,
+	//	OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
+	//	Scheme:           syncerConf.Scheme,
+	//	SyncCounterOpts: &prometheus.GaugeOpts{
+	//		Name: syncerMetricNames.ServiceExportCounterName,
+	//		Help: "Count of exported services",
+	//	},
+	//})
+	//if err != nil {
+	//	return nil, errors.Wrap(err, "error creating ServiceExport syncer")
+	//}
 
 	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:             "ServiceExport Uploader",
@@ -145,10 +147,10 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		Transform:        agentController.serviceExportUploadTransform,
 		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
 		Scheme:           syncerConf.Scheme,
-		//SyncCounterOpts: &prometheus.GaugeOpts{
-		//	Name: syncerMetricNames.ServiceExportCounterName,
-		//	Help: "Count of exported services",
-		//},
+		SyncCounterOpts: &prometheus.GaugeOpts{
+			Name: syncerMetricNames.ServiceExportUploadsCounterName,
+			Help: "Count of uploaded service exports",
+		},
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating ServiceExport uploader")
@@ -165,10 +167,10 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		ResourceType:    &mcsv1a1.ServiceExport{},
 		Transform:       agentController.serviceExportDownloadTransform,
 		Scheme:          syncerConf.Scheme,
-		//SyncCounterOpts: &prometheus.GaugeOpts{
-		//	Name: syncerMetricNames.ServiceExportCounterName,
-		//	Help: "Count of exported services",
-		//},
+		SyncCounterOpts: &prometheus.GaugeOpts{
+			Name: syncerMetricNames.ServiceExportStatusDownloadsCounterName,
+			Help: "Count of exported services",
+		},
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
@@ -231,6 +233,8 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
 
+	// check on startup if local service exports still exist for the local service imports.
+	// enqueue deletion of export if not, to delete obsolete service import
 	//a.serviceExportSyncer.Reconcile(func() []runtime.Object {
 	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
 	//		return &mcsv1a1.ServiceExport{
@@ -242,17 +246,8 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	//	})
 	//})
 
-	//a.serviceExportUploader.Reconcile(func() []runtime.Object {
-	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-	//		return &mcsv1a1.ServiceExport{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
-	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-	//			},
-	//		}
-	//	})
-	//})
-
+	// check on startup if local service still exist for the local service imports.
+	// enqueue deletion of service if not, to delete obsolete service import
 	a.serviceSyncer.Reconcile(func() []runtime.Object {
 		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
 			return &corev1.Service{
