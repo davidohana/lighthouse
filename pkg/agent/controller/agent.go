@@ -262,6 +262,8 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
 		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
 			annotations := se.GetAnnotations()
+			// workaround a bug in resource_syncer.Reconcile() when in LocalToRemote mode:
+			// resource name on broker is not mapped back to resource name on origin cluster
 			se.Name = annotations[lhconstants.OriginName]
 			return se
 		})
