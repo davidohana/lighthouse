@@ -100,7 +100,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		{
 			LocalSourceNamespace: metav1.NamespaceAll,
 			LocalResourceType:    &discovery.EndpointSlice{},
-			LocalTransform:       agentController.filterLocalEndpointSlices,
+			LocalShouldProcess:   agentController.endpointSliceSyncerSyncerShouldProcessResource,
+			//LocalTransform:       agentController.filterLocalEndpointSlices,
 			LocalResourcesEquivalent: func(obj1, obj2 *unstructured.Unstructured) bool {
 				return false
 			},
@@ -335,7 +336,7 @@ func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImpor
 	return retList
 }
 
-func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportToServiceImport(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	svcExport := obj.(*mcsv1a1.ServiceExport)
 
 	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", svcExport.Namespace, svcExport.Name, op)
@@ -430,7 +431,7 @@ func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeue
 	return serviceImport, false
 }
 
-func (a *Controller) serviceExportUploadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportUploadTransform(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	if op == syncer.Update {
 		// Ignore update because status is not synced to broker anyway
 		return nil, false
@@ -537,7 +538,7 @@ func (a *Controller) isRemoteServiceExportOwned(se *mcsv1a1.ServiceExport) bool 
 	return se.GetLabels()[lhconstants.LighthouseLabelSourceCluster] == a.clusterID
 }
 
-func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Update {
 		// we only care about status updates
 		return nil, false
@@ -634,14 +635,14 @@ func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syn
 		"ServiceExport was successfully synced to the broker")
 }
 
-func (a *Controller) serviceSyncerShouldProcessResource(obj *unstructured.Unstructured, op syncer.Operation) bool {
+func (a *Controller) serviceSyncerShouldProcessResource(_ *unstructured.Unstructured, op syncer.Operation) bool {
 	// we only care about service deletion so that we are able to delete corresponding exports from the broker
 	// actually functionality will be the same without this function because there is a subsequenct check at the
 	// transform function, but it prevents unnecessary verbose logging
 	return op == syncer.Delete
 }
 
-func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Delete {
 		// Ignore create/update
 		return nil, false
@@ -805,23 +806,30 @@ func (a *Controller) getObjectNameWithClusterID(name, namespace string) string {
 	return name + "-" + namespace + "-" + a.clusterID
 }
 
-func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
 	endpointSlice := obj.(*discovery.EndpointSlice)
 	endpointSlice.Namespace = endpointSlice.GetObjectMeta().GetLabels()[lhconstants.LabelSourceNamespace]
 
 	return endpointSlice, false
 }
 
-func (a *Controller) filterLocalEndpointSlices(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
-	endpointSlice := obj.(*discovery.EndpointSlice)
-	labels := endpointSlice.GetObjectMeta().GetLabels()
-
-	if labels[discovery.LabelManagedBy] != lhconstants.LabelValueManagedBy {
-		return nil, false
-	}
-
-	return obj, false
+func (a *Controller) endpointSliceSyncerSyncerShouldProcessResource(obj *unstructured.Unstructured, _ syncer.Operation) bool {
+	// we only want to sync local endpoint slices managed by submariner
+	// filter here and not in transform() prevents unnecessary verbose logs
+	labels := obj.GetLabels()
+	return labels[discovery.LabelManagedBy] == lhconstants.LabelValueManagedBy
 }
+
+//func (a *Controller) filterLocalEndpointSlices(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
+//	endpointSlice := obj.(*discovery.EndpointSlice)
+//	labels := endpointSlice.GetObjectMeta().GetLabels()
+//
+//	if labels[discovery.LabelManagedBy] != lhconstants.LabelValueManagedBy {
+//		return nil, false
+//	}
+//
+//	return obj, false
+//}
 
 func (a *Controller) getGlobalIP(service *corev1.Service) (ip, reason, msg string) {
 	if a.globalnetEnabled {
