@@ -747,7 +747,8 @@ func serviceExportConditionEqual(c1, c2 *mcsv1a1.ServiceExportCondition) bool {
 func (a *Controller) newServiceExport(name, namespace string) *mcsv1a1.ServiceExport {
 	return &mcsv1a1.ServiceExport{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: a.getObjectNameWithClusterID(name, namespace),
+			Name:      a.getObjectNameWithClusterID(name, namespace),
+			Namespace: namespace,
 			Annotations: map[string]string{
 				lhconstants.OriginName:      name,
 				lhconstants.OriginNamespace: namespace,
