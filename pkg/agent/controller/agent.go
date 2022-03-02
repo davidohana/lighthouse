@@ -187,7 +187,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 
 	// this syncer will delete service exports at the broker when the correlated local service is deleted
 	agentController.serviceSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:            "Service deletion",
+		Name:            "Service deletion watcher",
 		SourceClient:    syncerConf.LocalClient,
 		SourceNamespace: metav1.NamespaceAll,
 		RestMapper:      syncerConf.RestMapper,
@@ -287,16 +287,12 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 }
 
 func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.ServiceExport) runtime.Object) []runtime.Object {
-	klog.Infof("listing broker's ServiceExports")
-
 	brokerSeList, err := a.serviceExportStatusDownloader.ListResources()
 
 	if err != nil {
 		klog.Errorf("Error listing broker's ServiceExports: %v", err)
 		return nil
 	}
-
-	klog.Infof("listing broker's ServiceExports: %d found", len(brokerSeList))
 
 	retList := make([]runtime.Object, 0, len(brokerSeList))
 
@@ -314,10 +310,9 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 		}
 	}
 
-	klog.Infof("listing broker's ServiceExports: %d returned", len(retList))
-
 	return retList
 }
+
 func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImport) runtime.Object) []runtime.Object {
 	siList, err := a.serviceImportSyncer.ListLocalResources(&mcsv1a1.ServiceImport{})
 	if err != nil {
