@@ -192,6 +192,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
 		ResourceType:    &corev1.Service{},
+		ShouldProcess:   agentController.serviceSyncerShouldProcessResource,
 		Transform:       agentController.serviceToRemoteServiceExport,
 		Scheme:          syncerConf.Scheme,
 	})
@@ -631,6 +632,13 @@ func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syn
 		annotations[lhconstants.OriginNamespace],
 		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
 		"ServiceExport was successfully synced to the broker")
+}
+
+func (a *Controller) serviceSyncerShouldProcessResource(obj *unstructured.Unstructured, op syncer.Operation) bool {
+	// we only care about service deletion so that we are able to delete corresponding exports from the broker
+	// actually functionality will be the same without this function because there is a subsequenct check at the
+	// transform function, but it prevents unnecessary verbose logging
+	return op == syncer.Delete
 }
 
 func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
