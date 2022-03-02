@@ -460,14 +460,11 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 		return nil, true
 	}
 
-	// update only interests us for the case of unavailable service
-	if op == syncer.Update {
+	// this is an update and service exist. we want to continue only if the last status is "service unavailable"
+	// which means that service is available again -> the export should be uploaded again to the broker
+	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
 		return nil, false
 	}
-
-	//if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
-	//	return nil, false
-	//}
 
 	//svc := serviceObj.(*corev1.Service)
 
