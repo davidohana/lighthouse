@@ -260,7 +260,11 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
-		return a.remoteServiceExportLister(nil)
+		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
+			annotations := se.GetAnnotations()
+			se.Name = annotations[lhconstants.OriginName]
+			return se
+		})
 	})
 
 	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
