@@ -46,8 +46,6 @@ import (
 
 const (
 	reasonServiceUnavailable = "ServiceUnavailable"
-	reasonInvalidServiceType = "UnsupportedServiceType"
-	//clusterIP                = "cluster-ip"
 )
 
 type AgentConfig struct {
@@ -121,8 +119,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 
 	// This syncer will:
 	// - Upload local service exports to the broker (only if service exist)
-	// - Add labels and annotations to preserve information out of schema
-	// - Update the service export on the broker when there is a local update
+	// - Poll for service creation in case it does not exist
+	// - Add labels and annotations to preserve service information out of schema
 	// - Delete the service export on the broker when local service export is deleted
 	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:             "ServiceExport Uploader",
@@ -306,8 +304,8 @@ func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImpor
 	return retList
 }
 
-func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
-	localServiceExport := serviceObj.(*mcsv1a1.ServiceExport)
+func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	localServiceExport := serviceExportObj.(*mcsv1a1.ServiceExport)
 
 	klog.V(log.DEBUG).Infof("Local ServiceExport %s/%s %sd", localServiceExport.Namespace, localServiceExport.Name, op)
 
@@ -334,8 +332,10 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 		return nil, true
 	}
 
-	// this is an update and service exist. we want to continue only if the last status is "service unavailable"
-	// which means that service is available again -> the export should be uploaded again to the broker
+	// this is a status update of the local export and service exist.
+	// we want to continue only if the last status is "service unavailable"
+	// which means that service was previously not available and is now available
+	// so the export should be uploaded to the broker
 	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
 		return nil, false
 	}
@@ -345,7 +345,7 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 	isSupportedServiceType := svc.Spec.Type == "" || svc.Spec.Type == corev1.ServiceTypeClusterIP
 	if !isSupportedServiceType {
 		a.handleServiceExportTransformError(err, localServiceExport,
-			reasonInvalidServiceType, fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
+			"UnsupportedServiceType", fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 
 		return nil, false
 	}
@@ -506,7 +506,7 @@ func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syn
 
 func (a *Controller) serviceSyncerShouldProcessResource(_ *unstructured.Unstructured, op syncer.Operation) bool {
 	// we only care about service deletion so that we are able to delete corresponding exports from the broker
-	// actually functionality will be the same without this function because there is a subsequenct check at the
+	// actually functionality will be the same without this function because there is a subsequent check at the
 	// transform function, but it prevents unnecessary verbose logging
 	return op == syncer.Delete
 }
