@@ -99,7 +99,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		{
 			LocalSourceNamespace: metav1.NamespaceAll,
 			LocalResourceType:    &discovery.EndpointSlice{},
-			LocalShouldProcess:   agentController.endpointSliceSyncerSyncerShouldProcessResource,
+			LocalShouldProcess:   agentController.endpointSliceSyncerShouldProcessResource,
 			//LocalTransform:       agentController.filterLocalEndpointSlices,
 			LocalResourcesEquivalent: func(obj1, obj2 *unstructured.Unstructured) bool {
 				return false
@@ -683,7 +683,7 @@ func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, _ int, _ syn
 	return endpointSlice, false
 }
 
-func (a *Controller) endpointSliceSyncerSyncerShouldProcessResource(obj *unstructured.Unstructured, _ syncer.Operation) bool {
+func (a *Controller) endpointSliceSyncerShouldProcessResource(obj *unstructured.Unstructured, _ syncer.Operation) bool {
 	// we only want to sync local endpoint slices managed by submariner
 	// filter here and not in transform() prevents unnecessary verbose logs
 	labels := obj.GetLabels()
