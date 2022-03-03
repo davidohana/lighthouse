@@ -111,6 +111,7 @@ func main() {
 			ServiceExportCounterName:                "submariner_service_export",
 			ServiceExportUploadsCounterName:         "submariner_service_export_uploads",
 			ServiceExportStatusDownloadsCounterName: "submariner_service_export_status_downloads",
+			ServiceImportDownloadsCounterName:       "submariner_service_import_downloads",
 		})
 	if err != nil {
 		klog.Fatalf("Failed to create lighthouse agent: %v", err)

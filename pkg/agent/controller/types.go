@@ -31,18 +31,18 @@ import (
 )
 
 type Controller struct {
-	clusterID           string
-	globalnetEnabled    bool
-	namespace           string
-	kubeClientSet       kubernetes.Interface
-	serviceExportClient dynamic.NamespaceableResourceInterface
-	//serviceExportSyncer           syncer.Interface
+	clusterID                     string
+	globalnetEnabled              bool
+	namespace                     string
+	kubeClientSet                 kubernetes.Interface
+	serviceExportClient           dynamic.NamespaceableResourceInterface
 	serviceExportUploader         syncer.Interface
 	serviceExportStatusDownloader syncer.Interface
-	serviceImportSyncer           *broker.Syncer
-	endpointSliceSyncer           *broker.Syncer
-	serviceSyncer                 syncer.Interface
-	serviceImportController       *ServiceImportController
+	//serviceImportSyncer           *broker.Syncer
+	serviceImportDownloader syncer.Interface
+	endpointSliceSyncer     *broker.Syncer
+	serviceSyncer           syncer.Interface
+	serviceImportController *ServiceImportController
 }
 
 type AgentSpecification struct {

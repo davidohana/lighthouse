@@ -290,12 +290,18 @@ func (c *cluster) start(t *testDriver, syncerConfig broker.SyncerConfig) {
 
 	serviceExportStatusDownloadsCounterName := "submariner_service_export_status_downloads" + bigint.String()
 
+	bigint, err = rand.Int(rand.Reader, big.NewInt(1000000))
+	Expect(err).To(Succeed())
+
+	serviceImportDownloadsCounterName := "submariner_service_import_downloads" + bigint.String()
+
 	c.agentController, err = controller.New(&c.agentSpec, syncerConfig, c.localKubeClient,
 		controller.AgentConfig{
 			ServiceImportCounterName:                serviceImportCounterName,
 			ServiceExportCounterName:                serviceExportCounterName,
 			ServiceExportUploadsCounterName:         serviceExportUploadsCounterName,
 			ServiceExportStatusDownloadsCounterName: serviceExportStatusDownloadsCounterName,
+			ServiceImportDownloadsCounterName:       serviceImportDownloadsCounterName,
 		})
 
 	Expect(err).To(Succeed())
