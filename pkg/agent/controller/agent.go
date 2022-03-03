@@ -342,8 +342,8 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 
 	svc := serviceObj.(*corev1.Service)
 
-	_, IsSupportedServiceType := getServiceImportType(svc)
-	if !IsSupportedServiceType {
+	isSupportedServiceType := svc.Spec.Type == "" || svc.Spec.Type == corev1.ServiceTypeClusterIP
+	if !isSupportedServiceType {
 		a.handleServiceExportTransformError(err, localServiceExport,
 			reasonInvalidServiceType, fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 
@@ -474,18 +474,6 @@ func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
 	}
 
 	return ""
-}
-
-func getServiceImportType(service *corev1.Service) (mcsv1a1.ServiceImportType, bool) {
-	if service.Spec.Type != "" && service.Spec.Type != corev1.ServiceTypeClusterIP {
-		return "", false
-	}
-
-	if service.Spec.ClusterIP == corev1.ClusterIPNone {
-		return mcsv1a1.Headless, true
-	}
-
-	return mcsv1a1.ClusterSetIP, true
 }
 
 func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
