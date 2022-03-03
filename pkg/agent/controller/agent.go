@@ -119,25 +119,6 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating EndpointSlice syncer")
 	}
 
-	//agentController.serviceExportSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-	//	Name:             "ServiceExport -> ServiceImport",
-	//	SourceClient:     syncerConf.LocalClient,
-	//	SourceNamespace:  metav1.NamespaceAll,
-	//	RestMapper:       syncerConf.RestMapper,
-	//	Federator:        agentController.serviceImportSyncer.GetLocalFederator(),
-	//	ResourceType:     &mcsv1a1.ServiceExport{},
-	//	Transform:        agentController.serviceExportToServiceImport,
-	//	OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
-	//	Scheme:           syncerConf.Scheme,
-	//	SyncCounterOpts: &prometheus.GaugeOpts{
-	//		Name: syncerMetricNames.ServiceExportCounterName,
-	//		Help: "Count of exported services",
-	//	},
-	//})
-	//if err != nil {
-	//	return nil, errors.Wrap(err, "error creating ServiceExport syncer")
-	//}
-
 	// This syncer will:
 	// - Upload local service exports to the broker (only if service exist)
 	// - Add labels and annotations to preserve information out of schema
@@ -245,19 +226,6 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
 
-	// check on startup if local service exports still exist for the local service imports.
-	// enqueue deletion of export if not, to delete obsolete service import
-	//a.serviceExportSyncer.Reconcile(func() []runtime.Object {
-	//	return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-	//		return &mcsv1a1.ServiceExport{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Name:      si.GetAnnotations()[lhconstants.OriginName],
-	//				Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-	//			},
-	//		}
-	//	})
-	//})
-
 	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
@@ -336,101 +304,6 @@ func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImpor
 	}
 
 	return retList
-}
-
-func (a *Controller) serviceExportToServiceImport(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
-	svcExport := obj.(*mcsv1a1.ServiceExport)
-
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", svcExport.Namespace, svcExport.Name, op)
-
-	if op == syncer.Delete {
-		return a.newServiceImport(svcExport.Name, svcExport.Namespace), false
-	}
-
-	obj, found, err := a.serviceSyncer.GetResource(svcExport.Name, svcExport.Namespace)
-	if err != nil {
-		// some other error. Log and requeue
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-			mcsv1a1.ServiceExportValid, corev1.ConditionUnknown, "ServiceRetrievalFailed",
-			fmt.Sprintf("Error retrieving the Service: %v", err))
-		klog.Errorf("Error retrieving Service (%s/%s): %v", svcExport.Namespace, svcExport.Name, err)
-
-		return nil, true
-	}
-
-	if !found {
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", svcExport.Namespace, svcExport.Name)
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-			mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reasonServiceUnavailable,
-			"Service to be exported doesn't exist")
-
-		return nil, true
-	}
-
-	if op == syncer.Update && getLastExportConditionReason(svcExport) != reasonServiceUnavailable {
-		return nil, false
-	}
-
-	svc := obj.(*corev1.Service)
-
-	svcType, ok := getServiceImportType(svc)
-
-	if !ok {
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-			mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reasonInvalidServiceType,
-			fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
-		klog.Errorf("Service type %q not supported", svc.Spec.Type)
-
-		return nil, false
-	}
-
-	serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
-
-	serviceImport.Spec = mcsv1a1.ServiceImportSpec{
-		Ports:                 []mcsv1a1.ServicePort{},
-		Type:                  svcType,
-		SessionAffinityConfig: new(corev1.SessionAffinityConfig),
-	}
-
-	serviceImport.Status = mcsv1a1.ServiceImportStatus{
-		Clusters: []mcsv1a1.ClusterStatus{
-			{
-				Cluster: a.clusterID,
-			},
-		},
-	}
-
-	if svcType == mcsv1a1.ClusterSetIP {
-		if a.globalnetEnabled {
-			ip, reason, msg := a.getGlobalIP(svc)
-			if ip == "" {
-				klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", svcExport.Namespace, svcExport.Name)
-				// Globalnet enabled but service doesn't have globalIp yet, Update the status and requeue
-				a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-					mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason, msg)
-
-				return nil, true
-			}
-
-			serviceImport.Spec.IPs = []string{ip}
-		} else {
-			serviceImport.Spec.IPs = []string{svc.Spec.ClusterIP}
-		}
-
-		serviceImport.Spec.Ports = a.getPortsForService(svc)
-		/* We also store the clusterIP in an annotation as an optimization to recover it in case the IPs are
-		cleared out when here's no backing Endpoint pods.
-		*/
-		serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
-	}
-
-	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, "AwaitingSync",
-		"Awaiting sync of the ServiceImport to the broker")
-
-	klog.V(log.DEBUG).Infof("Returning ServiceImport: %#v", serviceImport)
-
-	return serviceImport, false
 }
 
 func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
