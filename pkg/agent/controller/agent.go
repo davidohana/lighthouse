@@ -47,7 +47,7 @@ import (
 const (
 	reasonServiceUnavailable = "ServiceUnavailable"
 	reasonInvalidServiceType = "UnsupportedServiceType"
-	clusterIP                = "cluster-ip"
+	//clusterIP                = "cluster-ip"
 )
 
 type AgentConfig struct {
