@@ -20,6 +20,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/submariner-io/lighthouse/pkg/mcs"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -447,21 +448,15 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 	serviceObj, serviceExist, err := a.serviceSyncer.GetResource(localServiceExport.Name, localServiceExport.Namespace)
 	if err != nil {
 		// some other error. Log and requeue to retry later
-		a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
-			mcsv1a1.ServiceExportValid, corev1.ConditionUnknown, "ServiceRetrievalFailed",
-			fmt.Sprintf("Error retrieving the Service: %v", err))
-		klog.Errorf("Error retrieving Service (%s/%s): %v", localServiceExport.Namespace, localServiceExport.Name, err)
-
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ServiceRetrievalFailed", "Error retrieving the Service")
 		return nil, true
 	}
 
 	if !serviceExist {
 		// corresponding service not exist - requeue to retry later, until service is created
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist, will not upload",
-			localServiceExport.Namespace, localServiceExport.Name)
-		a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
-			mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reasonServiceUnavailable,
-			"Service to be exported doesn't exist")
+		a.handleServiceExportTransformError(err, localServiceExport,
+			reasonServiceUnavailable, "Service to be exported does not exist, will not upload")
 
 		return nil, true
 	}
@@ -472,17 +467,31 @@ func (a *Controller) serviceExportUploadTransform(serviceObj runtime.Object, _ i
 		return nil, false
 	}
 
-	//svc := serviceObj.(*corev1.Service)
+	svc := serviceObj.(*corev1.Service)
 
-	//svcType, ok := getServiceImportType(svc)
+	_, IsSupportedServiceType := getServiceImportType(svc)
+	if !IsSupportedServiceType {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			reasonInvalidServiceType, fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 
-	//if !ok {
-	//	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, reasonInvalidServiceType,
-	//		fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
-	//	klog.Errorf("Service type %q not supported", svc.Spec.Type)
-	//
-	//	return nil, false
-	//}
+		return nil, false
+	}
+
+	exportSpec, err := mcs.NewExportSpec(svc, localServiceExport, a.clusterID)
+	if err != nil {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ExportSpecCreationFailed", "Error creating service export spec")
+
+		return nil, false
+	}
+
+	err = exportSpec.MarshalObjectMeta(&brokerServiceExport.ObjectMeta)
+	if err != nil {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ExportSpecMarshalFailed", "Error marshaling service export spec to ObjectMeta")
+
+		return nil, false
+	}
 
 	//serviceImport := a.newServiceImport(localServiceExport.Name, localServiceExport.Namespace)
 
@@ -851,4 +860,14 @@ func (a *Controller) getIngressIP(name, namespace string) (*IngressIP, bool) {
 	}
 
 	return parseIngressIP(obj), true
+}
+
+func (a *Controller) handleServiceExportTransformError(err error, svcExport *mcsv1a1.ServiceExport, reason string, errMessage string) {
+	if err == nil {
+		return
+	}
+	klog.Errorf("%s (%s/%s): %v", svcExport.Name, svcExport.Namespace, errMessage)
+	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason,
+		fmt.Sprintf("%s: %v", errMessage, err))
 }
