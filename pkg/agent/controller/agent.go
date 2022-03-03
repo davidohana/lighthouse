@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/submariner-io/lighthouse/pkg/mcs"
-	"k8s.io/apimachinery/pkg/fields"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -299,12 +298,9 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 
 func (a *Controller) localServiceImportLister() []runtime.Object {
 
+	// list local service imports in the operator namespace
 	client := a.endpointSliceSyncer.GetLocalClient().Resource(serviceImportGVR).Namespace(a.namespace)
-	termNotInBrokerNamespace := fields.OneTermNotEqualSelector("metadata.namespace", a.endpointSliceSyncer.GetBrokerNamespace())
-	siList, err := client.List(context.TODO(),
-		metav1.ListOptions{
-			FieldSelector: termNotInBrokerNamespace.String(),
-		})
+	siList, err := client.List(context.TODO(), metav1.ListOptions{})
 
 	if err != nil {
 		klog.Errorf("Error listing serviceImports: %v", err)
@@ -313,10 +309,11 @@ func (a *Controller) localServiceImportLister() []runtime.Object {
 
 	retList := make([]runtime.Object, 0, len(siList.Items))
 
+	// transform each unstructured service import, we are only interested in object meta
+	// the namespace is set to broker namespace so that resource syncer will be able to correlate
+	// the local import with the import on the broker
 	for _, obj := range siList.Items {
 		si := mcsv1a1.ServiceImport{}
-		si.ObjectMeta.Labels = obj.GetLabels()
-		si.ObjectMeta.Annotations = obj.GetAnnotations()
 		si.ObjectMeta.Name = obj.GetName()
 		si.ObjectMeta.Namespace = a.endpointSliceSyncer.GetBrokerNamespace()
 
