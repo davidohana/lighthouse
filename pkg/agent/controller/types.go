@@ -38,11 +38,10 @@ type Controller struct {
 	serviceExportClient           dynamic.NamespaceableResourceInterface
 	serviceExportUploader         syncer.Interface
 	serviceExportStatusDownloader syncer.Interface
-	//serviceImportSyncer           *broker.Syncer
-	serviceImportDownloader syncer.Interface
-	endpointSliceSyncer     *broker.Syncer
-	serviceSyncer           syncer.Interface
-	serviceImportController *ServiceImportController
+	serviceImportDownloader       syncer.Interface
+	endpointSliceSyncer           *broker.Syncer
+	serviceSyncer                 syncer.Interface
+	serviceImportController       *ServiceImportController
 }
 
 type AgentSpecification struct {

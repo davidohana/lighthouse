@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/submariner-io/lighthouse/pkg/mcs"
+	"k8s.io/apimachinery/pkg/fields"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -77,23 +78,6 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 
 	syncerConf.LocalNamespace = spec.Namespace
 	syncerConf.LocalClusterID = spec.ClusterID
-
-	//syncerConf.ResourceConfigs = []broker.ResourceConfig{
-	//	{
-	//		LocalSourceNamespace: metav1.NamespaceAll,
-	//		LocalResourceType:    &mcsv1a1.ServiceImport{},
-	//		BrokerResourceType:   &mcsv1a1.ServiceImport{},
-	//		SyncCounterOpts: &prometheus.GaugeOpts{
-	//			Name: syncerMetricNames.ServiceImportCounterName,
-	//			Help: "Count of imported services",
-	//		},
-	//	},
-	//}
-	//
-	//agentController.serviceImportSyncer, err = broker.NewSyncer(syncerConf)
-	//if err != nil {
-	//	return nil, errors.Wrap(err, "error creating ServiceImport syncer")
-	//}
 
 	syncerConf.LocalNamespace = metav1.NamespaceAll
 	syncerConf.ResourceConfigs = []broker.ResourceConfig{
@@ -166,7 +150,8 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
 	}
 
-	// this syncer downloads service imports from broker into the local operator namespace
+	// this syncer downloads/updates/deletes service imports from broker into the local operator namespace
+	// create a federator with the operator namespace
 	serviceImportLocalFederator := broker.NewFederator(syncerConf.LocalClient, syncerConf.RestMapper, spec.Namespace, "")
 	agentController.serviceImportDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceImport Downloader",
@@ -177,8 +162,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		Federator:       serviceImportLocalFederator,
 		Direction:       syncer.None, // want to download all exports, including for exports originated in the local cluster
 		ResourceType:    &mcsv1a1.ServiceImport{},
-		//Transform:       agentController.serviceExportDownloadTransform,
-		Scheme: syncerConf.Scheme,
+		Scheme:          syncerConf.Scheme,
 		SyncCounterOpts: &prometheus.GaugeOpts{
 			Name: syncerMetricNames.ServiceImportDownloadsCounterName,
 			Help: "Count of downloaded service imports",
@@ -277,6 +261,10 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		})
 	})
 
+	// check on startup if a remote service import still exist for all local service imports downloaded from the broker.
+	// if not - enqueue deletion of the service import, to delete obsolete service imports locally
+	a.serviceImportDownloader.Reconcile(a.localServiceImportLister)
+
 	klog.Info("Agent controller started")
 
 	return nil
@@ -309,23 +297,34 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 	return retList
 }
 
-//func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImport) runtime.Object) []runtime.Object {
-//	siList, err := a.serviceImportSyncer.ListLocalResources(&mcsv1a1.ServiceImport{})
-//	if err != nil {
-//		klog.Errorf("Error listing serviceImports: %v", err)
-//		return nil
-//	}
-//
-//	retList := make([]runtime.Object, 0, len(siList))
-//
-//	for _, obj := range siList {
-//		si := obj.(*mcsv1a1.ServiceImport)
-//
-//		retList = append(retList, transform(si))
-//	}
-//
-//	return retList
-//}
+func (a *Controller) localServiceImportLister() []runtime.Object {
+
+	client := a.endpointSliceSyncer.GetLocalClient().Resource(serviceImportGVR).Namespace(a.namespace)
+	termNotInBrokerNamespace := fields.OneTermNotEqualSelector("metadata.namespace", a.endpointSliceSyncer.GetBrokerNamespace())
+	siList, err := client.List(context.TODO(),
+		metav1.ListOptions{
+			FieldSelector: termNotInBrokerNamespace.String(),
+		})
+
+	if err != nil {
+		klog.Errorf("Error listing serviceImports: %v", err)
+		return nil
+	}
+
+	retList := make([]runtime.Object, 0, len(siList.Items))
+
+	for _, obj := range siList.Items {
+		si := mcsv1a1.ServiceImport{}
+		si.ObjectMeta.Labels = obj.GetLabels()
+		si.ObjectMeta.Annotations = obj.GetAnnotations()
+		si.ObjectMeta.Name = obj.GetName()
+		si.ObjectMeta.Namespace = a.endpointSliceSyncer.GetBrokerNamespace()
+
+		retList = append(retList, &si)
+	}
+
+	return retList
+}
 
 func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	localServiceExport := serviceExportObj.(*mcsv1a1.ServiceExport)
