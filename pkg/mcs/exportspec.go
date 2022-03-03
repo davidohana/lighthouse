@@ -1,3 +1,20 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+
+Copyright Contributors to the Submariner project.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package mcs
 
 import (
@@ -124,11 +141,11 @@ func (es *ExportSpec) UnmarshalObjectMeta(md *metav1.ObjectMeta) error {
 	return json.Unmarshal([]byte(value), es)
 }
 
-// IsPrefferredOver determines if this ExportSpec has precedence over the given
+// IsPreferredOver determines if this ExportSpec has precedence over the given
 // ExportSpec. This is based on the conflict resolution specification set in the
 // KEP (i.e.,earliest creation time wins), extended for consistency in the case
 // where exports are created at the exact same time.
-func (es *ExportSpec) IsPrefferredOver(another *ExportSpec) bool {
+func (es *ExportSpec) IsPreferredOver(another *ExportSpec) bool {
 	if es.CreatedAt == another.CreatedAt {
 		return es.ClusterID <= another.ClusterID
 	}
