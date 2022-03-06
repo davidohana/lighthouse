@@ -25,6 +25,7 @@ import (
 	"github.com/submariner-io/admiral/pkg/watcher"
 	lhconstants "github.com/submariner-io/lighthouse/pkg/constants"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
@@ -48,7 +49,8 @@ func newServiceImportController(spec *AgentSpecification, serviceSyncer syncer.I
 		Name:            "ServiceImport watcher",
 		SourceClient:    localClient,
 		SourceNamespace: spec.Namespace,
-		Direction:       syncer.LocalToRemote,
+		Direction:       syncer.None, // we want custom ShouldProcess rules - only imports of this cluster
+		ShouldProcess:   controller.shouldProcessServiceImport,
 		RestMapper:      restMapper,
 		Federator:       federate.NewNoopFederator(),
 		ResourceType:    &mcsv1a1.ServiceImport{},
@@ -93,6 +95,11 @@ func (c *ServiceImportController) start(stopCh <-chan struct{}) error {
 	}
 
 	return nil
+}
+
+func (c *ServiceImportController) shouldProcessServiceImport(svcImportObj *unstructured.Unstructured, op syncer.Operation) bool {
+	labels := svcImportObj.GetLabels()
+	return labels[lhconstants.LighthouseLabelSourceCluster] == c.clusterID
 }
 
 func (c *ServiceImportController) serviceImportCreatedOrUpdated(serviceImport *mcsv1a1.ServiceImport, key string) bool {
