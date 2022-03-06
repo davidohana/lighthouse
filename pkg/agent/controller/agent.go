@@ -191,7 +191,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	}
 
 	// This controller creates endpoint controller for each *local* service import.
-	// Endpoint controller creates an EndpointSlice for each Endpoints object.
+	// Endpoint controller creates an EndpointSlice for each Endpoint object.
 	// The created slices are then synchronized with the broker by endpointSliceSyncer
 	agentController.serviceImportController, err = newServiceImportController(spec, agentController.serviceSyncer,
 		syncerConf.RestMapper, syncerConf.LocalClient, syncerConf.Scheme)
