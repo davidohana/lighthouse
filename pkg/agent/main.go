@@ -125,8 +125,11 @@ func main() {
 		Scheme:          scheme.Scheme,
 	}, kubeClientSet,
 		controller.AgentConfig{
-			ServiceImportCounterName: "submariner_service_import",
-			ServiceExportCounterName: "submariner_service_export",
+			ServiceImportCounterName:                "submariner_service_import",
+			ServiceExportCounterName:                "submariner_service_export",
+			ServiceExportUploadsCounterName:         "submariner_service_export_uploads",
+			ServiceExportStatusDownloadsCounterName: "submariner_service_export_status_downloads",
+			ServiceImportDownloadsCounterName:       "submariner_service_import_downloads",
 		})
 	exitOnError(err, "Failed to create lighthouse agent")
 
