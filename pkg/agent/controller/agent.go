@@ -96,6 +96,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		},
 	}
 
+	// This syncer is bidirectional. Uploads local endpoint slices created by serviceImportController to the broker
+	// and downloads remote endpoint slices from the broker to the service namespace.
+	// Syncs only EP slices that are managed by submariner.
 	agentController.endpointSliceSyncer, err = broker.NewSyncer(syncerConf)
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating EndpointSlice syncer")
@@ -150,7 +153,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	}
 
 	// this syncer downloads/updates/deletes service imports from broker into the local operator namespace
-	// create a federator with the operator namespace
+	// create a federator to store imports in the operator namespace
 	serviceImportLocalFederator := broker.NewFederator(syncerConf.LocalClient, syncerConf.RestMapper, spec.Namespace, "")
 	agentController.serviceImportDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceImport Downloader",
@@ -159,7 +162,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
 		RestMapper:      syncerConf.RestMapper,
 		Federator:       serviceImportLocalFederator,
-		Direction:       syncer.None, // want to download all exports, including for exports originated in the local cluster
+		Direction:       syncer.None, // want to download all imports, including for exports originated in the local cluster
 		ResourceType:    &mcsv1a1.ServiceImport{},
 		Scheme:          syncerConf.Scheme,
 		SyncCounterOpts: &prometheus.GaugeOpts{
@@ -187,6 +190,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating Service syncer")
 	}
 
+	// This controller creates endpoint controller for each *local* service import.
+	// Endpoint controller creates an EndpointSlice for each Endpoints object.
+	// The created slices are then synchronized with the broker by endpointSliceSyncer
 	agentController.serviceImportController, err = newServiceImportController(spec, agentController.serviceSyncer,
 		syncerConf.RestMapper, syncerConf.LocalClient, syncerConf.Scheme)
 	if err != nil {
