@@ -100,7 +100,6 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 			LocalSourceNamespace: metav1.NamespaceAll,
 			LocalResourceType:    &discovery.EndpointSlice{},
 			LocalShouldProcess:   agentController.endpointSliceSyncerShouldProcessResource,
-			//LocalTransform:       agentController.filterLocalEndpointSlices,
 			LocalResourcesEquivalent: func(obj1, obj2 *unstructured.Unstructured) bool {
 				return false
 			},
@@ -195,10 +194,6 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 
 	// Start the informer factories to begin populating the informer caches
 	klog.Info("Starting Agent controller")
-
-	//if err := a.serviceExportSyncer.Start(stopCh); err != nil {
-	//	return errors.Wrap(err, "error starting ServiceExport syncer")
-	//}
 
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
@@ -366,44 +361,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 		return nil, false
 	}
 
-	//serviceImport := a.newServiceImport(localServiceExport.Name, localServiceExport.Namespace)
-
-	//serviceImport.Spec = mcsv1a1.ServiceImportSpec{
-	//	Ports:                 []mcsv1a1.ServicePort{},
-	//	Type:                  svcType,
-	//	SessionAffinityConfig: new(corev1.SessionAffinityConfig),
-	//}
-	//
-	//serviceImport.Status = mcsv1a1.ServiceImportStatus{
-	//	Clusters: []mcsv1a1.ClusterStatus{
-	//		{
-	//			Cluster: a.clusterID,
-	//		},
-	//	},
-	//}
-
-	//if svcType == mcsv1a1.ClusterSetIP {
-	//	if a.globalnetEnabled {
-	//		ip, reason, msg := a.getGlobalIP(svc)
-	//		if ip == "" {
-	//			klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", localServiceExport.Namespace, localServiceExport.Name)
-	//			// Globalnet enabled but serviceObj doesn't have globalIp yet, Update the status and requeue
-	//			a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace, corev1.ConditionFalse, reason, msg)
-	//
-	//			return nil, true
-	//		}
-	//
-	//		serviceImport.Spec.IPs = []string{ip}
-	//	} else {
-	//		serviceImport.Spec.IPs = []string{svc.Spec.ClusterIP}
-	//	}
-	//
-	//	serviceImport.Spec.Ports = a.getPortsForService(svc)
-	//	/* We also store the clusterIP in an annotation as an optimization to recover it in case the IPs are
-	//	cleared out when here's no backing Endpoint pods.
-	//	*/
-	//	serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
-	//}
+	//TODO: preserve additional information required for globalnet
 
 	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
 		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, "AwaitingSync",
@@ -689,17 +647,6 @@ func (a *Controller) endpointSliceSyncerShouldProcessResource(obj *unstructured.
 	labels := obj.GetLabels()
 	return labels[discovery.LabelManagedBy] == lhconstants.LabelValueManagedBy
 }
-
-//func (a *Controller) filterLocalEndpointSlices(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
-//	endpointSlice := obj.(*discovery.EndpointSlice)
-//	labels := endpointSlice.GetObjectMeta().GetLabels()
-//
-//	if labels[discovery.LabelManagedBy] != lhconstants.LabelValueManagedBy {
-//		return nil, false
-//	}
-//
-//	return obj, false
-//}
 
 func (a *Controller) getGlobalIP(service *corev1.Service) (ip, reason, msg string) {
 	if a.globalnetEnabled {
