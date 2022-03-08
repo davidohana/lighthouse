@@ -20,9 +20,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"github.com/submariner-io/lighthouse/pkg/mcs"
-	"reflect"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
