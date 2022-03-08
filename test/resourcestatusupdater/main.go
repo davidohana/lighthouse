@@ -24,21 +24,18 @@ import (
 	"fmt"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	"github.com/pkg/errors"
-	"github.com/submariner-io/admiral/pkg/resource"
-	"github.com/submariner-io/admiral/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
+	mcsclient "sigs.k8s.io/mcs-api/pkg/client/clientset/versioned"
 )
 
 func main() {
 	condType := string(mcsv1a1.ServiceExportConflict)
 	condReason := "default reason"
-	condMsg := "deafult message"
+	condMsg := "default message"
 	condStatus := string(corev1.ConditionTrue)
 
 	seNamespace := "submariner-k8s-broker"
@@ -71,6 +68,7 @@ func main() {
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	panicOnError(err)
 
+	// list pods for sanity check, to verify that we can reach the cluster
 	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
 	panicOnError(err)
 	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
@@ -78,23 +76,12 @@ func main() {
 	err = mcsv1a1.AddToScheme(scheme.Scheme)
 	panicOnError(err)
 
-	dynClient, err := dynamic.NewForConfig(restConfig)
+	mcsClient := mcsclient.NewForConfigOrDie(restConfig)
+	nsExports := mcsClient.MulticlusterV1alpha1().ServiceExports(seNamespace)
+	se, err := nsExports.Get(context.TODO(), seName, metav1.GetOptions{})
 	panicOnError(err)
 
-	restMapper, err := util.BuildRestMapper(restConfig)
-	panicOnError(err)
-
-	to, err := resource.ToUnstructured(&mcsv1a1.ServiceExport{})
-	panicOnError(err)
-
-	gvr, err := util.FindGroupVersionResource(to, restMapper)
-	panicOnError(err)
-
-	serviceExportClient := dynClient.Resource(*gvr)
-	serviceExport, err := getServiceExport(serviceExportClient, seName, seNamespace)
-	panicOnError(err)
-
-	fmt.Printf("found %d conditions in ServiceExport\n", len(serviceExport.Status.Conditions))
+	fmt.Printf("Found %d conditions in ServiceExport\n", len(se.Status.Conditions))
 
 	now := metav1.Now()
 	exportCondition := mcsv1a1.ServiceExportCondition{
@@ -105,32 +92,13 @@ func main() {
 		Message:            &condMsg,
 	}
 
-	serviceExport.Status.Conditions = append(serviceExport.Status.Conditions, exportCondition)
-	fmt.Printf("now: %d conditions in ServiceExport\n", len(serviceExport.Status.Conditions))
+	se.Status.Conditions = append(se.Status.Conditions, exportCondition)
+	fmt.Printf("now: %d conditions in ServiceExport\n", len(se.Status.Conditions))
 
-	raw, err := resource.ToUnstructured(serviceExport)
+	_, err = nsExports.Update(context.TODO(), se, metav1.UpdateOptions{})
 	panicOnError(err)
 
-	_, err = serviceExportClient.Namespace(seNamespace).UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
-	panicOnError(err)
-
-	println("done")
-}
-
-func getServiceExport(serviceExportClient dynamic.NamespaceableResourceInterface, name, namespace string) (*mcsv1a1.ServiceExport, error) {
-	obj, err := serviceExportClient.Namespace(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving ServiceExport")
-	}
-
-	se := &mcsv1a1.ServiceExport{}
-
-	err = scheme.Scheme.Convert(obj, se, nil)
-	if err != nil {
-		return nil, errors.WithMessagef(err, "Error converting %#v to ServiceExport", obj)
-	}
-
-	return se, nil
+	println("Done")
 }
 
 func panicOnError(err error) {
