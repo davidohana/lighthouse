@@ -6,6 +6,7 @@ require (
 	github.com/caddyserver/caddy v1.0.5
 	github.com/coredns/caddy v1.1.1
 	github.com/coredns/coredns v1.8.3
+	github.com/go-logr/logr v0.4.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -14,7 +15,7 @@ require (
 	github.com/onsi/gomega v1.18.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.1
-	github.com/stretchr/testify v1.7.0 // indirect
+	github.com/stretchr/testify v1.7.0
 	github.com/submariner-io/admiral v0.12.0-m3.0.20220211050139-69a40598bdd6
 	github.com/submariner-io/shipyard v0.12.0-m3.0.20220217165059-b87e9080b8d1
 	github.com/uw-labs/lichen v0.1.5
