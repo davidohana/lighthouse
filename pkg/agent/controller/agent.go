@@ -20,6 +20,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/submariner-io/lighthouse/pkg/mcs"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -44,14 +45,14 @@ import (
 )
 
 const (
-	serviceUnavailable = "ServiceUnavailable"
-	invalidServiceType = "UnsupportedServiceType"
-	clusterIP          = "cluster-ip"
+	reasonServiceUnavailable = "ServiceUnavailable"
 )
 
 type AgentConfig struct {
-	ServiceImportCounterName string
-	ServiceExportCounterName string
+	ServiceImportCounterName                string
+	ServiceExportCounterName                string
+	ServiceExportUploadsCounterName         string
+	ServiceExportStatusDownloadsCounterName string
 }
 
 var MaxExportStatusConditions = 10
@@ -98,7 +99,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		{
 			LocalSourceNamespace: metav1.NamespaceAll,
 			LocalResourceType:    &discovery.EndpointSlice{},
-			LocalTransform:       agentController.filterLocalEndpointSlices,
+			LocalShouldProcess:   agentController.endpointSliceSyncerShouldProcessResource,
 			LocalResourcesEquivalent: func(obj1, obj2 *unstructured.Unstructured) bool {
 				return false
 			},
@@ -115,33 +116,64 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating EndpointSlice syncer")
 	}
 
-	agentController.serviceExportSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:             "ServiceExport -> ServiceImport",
+	// This syncer will:
+	// - Upload local service exports to the broker (only if service exist)
+	// - Poll for service creation in case it does not exist
+	// - Add labels and annotations to preserve service information out of schema
+	// - Delete the service export on the broker when local service export is deleted
+	agentController.serviceExportUploader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+		Name:             "ServiceExport Uploader",
+		LocalClusterID:   spec.ClusterID,
 		SourceClient:     syncerConf.LocalClient,
 		SourceNamespace:  metav1.NamespaceAll,
 		RestMapper:       syncerConf.RestMapper,
-		Federator:        agentController.serviceImportSyncer.GetLocalFederator(),
+		Federator:        agentController.serviceImportSyncer.GetBrokerFederator(),
+		Direction:        syncer.LocalToRemote,
 		ResourceType:     &mcsv1a1.ServiceExport{},
-		Transform:        agentController.serviceExportToServiceImport,
-		OnSuccessfulSync: agentController.onSuccessfulServiceImportSync,
+		Transform:        agentController.serviceExportUploadTransform,
+		OnSuccessfulSync: agentController.onSuccessfulServiceExportSync,
 		Scheme:           syncerConf.Scheme,
 		SyncCounterOpts: &prometheus.GaugeOpts{
-			Name: syncerMetricNames.ServiceExportCounterName,
+			Name: syncerMetricNames.ServiceExportUploadsCounterName,
+			Help: "Count of uploaded service exports",
+		},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating ServiceExport uploader")
+	}
+
+	// this syncer downloads conflict condition status of service exports from the broker and merge it
+	// into the local service export
+	agentController.serviceExportStatusDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
+		Name:            "ServiceExport.Status Downloader",
+		LocalClusterID:  spec.ClusterID,
+		SourceClient:    agentController.endpointSliceSyncer.GetBrokerClient(),
+		SourceNamespace: agentController.endpointSliceSyncer.GetBrokerNamespace(),
+		RestMapper:      syncerConf.RestMapper,
+		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
+		Direction:       syncer.None, // handle filtering of exports manually in transform func
+		ResourceType:    &mcsv1a1.ServiceExport{},
+		Transform:       agentController.serviceExportDownloadTransform,
+		Scheme:          syncerConf.Scheme,
+		SyncCounterOpts: &prometheus.GaugeOpts{
+			Name: syncerMetricNames.ServiceExportStatusDownloadsCounterName,
 			Help: "Count of exported services",
 		},
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating ServiceExport syncer")
+		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
 	}
 
+	// this syncer will delete service exports at the broker when the correlated local service is deleted
 	agentController.serviceSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:            "Service deletion",
+		Name:            "Service deletion watcher",
 		SourceClient:    syncerConf.LocalClient,
 		SourceNamespace: metav1.NamespaceAll,
 		RestMapper:      syncerConf.RestMapper,
-		Federator:       agentController.serviceImportSyncer.GetLocalFederator(),
+		Federator:       agentController.serviceImportSyncer.GetBrokerFederator(),
 		ResourceType:    &corev1.Service{},
-		Transform:       agentController.serviceToRemoteServiceImport,
+		ShouldProcess:   agentController.serviceSyncerShouldProcessResource,
+		Transform:       agentController.serviceToRemoteServiceExport,
 		Scheme:          syncerConf.Scheme,
 	})
 	if err != nil {
@@ -163,8 +195,12 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// Start the informer factories to begin populating the informer caches
 	klog.Info("Starting Agent controller")
 
-	if err := a.serviceExportSyncer.Start(stopCh); err != nil {
-		return errors.Wrap(err, "error starting ServiceExport syncer")
+	if err := a.serviceExportUploader.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting ServiceExport uploader")
+	}
+
+	if err := a.serviceExportStatusDownloader.Start(stopCh); err != nil {
+		return errors.Wrap(err, "error starting ServiceExport status downloader")
 	}
 
 	if err := a.serviceSyncer.Start(stopCh); err != nil {
@@ -183,23 +219,31 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
 
-	a.serviceExportSyncer.Reconcile(func() []runtime.Object {
-		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
-			return &mcsv1a1.ServiceExport{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      si.GetAnnotations()[lhconstants.OriginName],
-					Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
-				},
-			}
+	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
+	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
+	a.serviceExportUploader.Reconcile(func() []runtime.Object {
+		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
+			annotations := se.GetAnnotations()
+			// workaround a bug in resource_syncer.Reconcile() when in LocalToRemote mode:
+			// resource name on broker is not mapped back to resource name on origin cluster
+			se.Name = annotations[lhconstants.OriginName]
+			return se
 		})
 	})
 
+	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
+	// if not - enqueue deletion of the service, to delete obsolete service export from the broker
 	a.serviceSyncer.Reconcile(func() []runtime.Object {
-		return a.serviceImportLister(func(si *mcsv1a1.ServiceImport) runtime.Object {
+		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
+			// only care about service exports that originated from this cluster
+			if !a.isRemoteServiceExportOwned(se) {
+				return nil
+			}
+			annotations := se.GetAnnotations()
 			return &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      si.GetAnnotations()[lhconstants.OriginName],
-					Namespace: si.GetAnnotations()[lhconstants.OriginNamespace],
+					Name:      annotations[lhconstants.OriginName],
+					Namespace: annotations[lhconstants.OriginNamespace],
 				},
 			}
 		})
@@ -208,6 +252,33 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	klog.Info("Agent controller started")
 
 	return nil
+}
+
+func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.ServiceExport) runtime.Object) []runtime.Object {
+	brokerSeList, err := a.serviceExportStatusDownloader.ListResources()
+
+	if err != nil {
+		klog.Errorf("Error listing broker's ServiceExports: %v", err)
+		return nil
+	}
+
+	retList := make([]runtime.Object, 0, len(brokerSeList))
+
+	for _, obj := range brokerSeList {
+		se := obj.(*mcsv1a1.ServiceExport)
+
+		var transformed runtime.Object
+		if transform == nil {
+			transformed = se
+		} else {
+			transformed = transform(se)
+		}
+		if transformed != nil {
+			retList = append(retList, transformed)
+		}
+	}
+
+	return retList
 }
 
 func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImport) runtime.Object) []runtime.Object {
@@ -228,94 +299,130 @@ func (a *Controller) serviceImportLister(transform func(si *mcsv1a1.ServiceImpor
 	return retList
 }
 
-func (a *Controller) serviceExportToServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
-	svcExport := obj.(*mcsv1a1.ServiceExport)
+func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	localServiceExport := serviceExportObj.(*mcsv1a1.ServiceExport)
 
-	klog.V(log.DEBUG).Infof("ServiceExport %s/%s %sd", svcExport.Namespace, svcExport.Name, op)
+	klog.V(log.DEBUG).Infof("Local ServiceExport %s/%s %sd", localServiceExport.Namespace, localServiceExport.Name, op)
 
+	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 	if op == syncer.Delete {
-		return a.newServiceImport(svcExport.Name, svcExport.Namespace), false
+		// need to convert name to full name so that resource_syncer can find the resource
+		// on the broker and delete it
+		return brokerServiceExport, false
 	}
 
-	obj, found, err := a.serviceSyncer.GetResource(svcExport.Name, svcExport.Namespace)
+	serviceObj, serviceExist, err := a.serviceSyncer.GetResource(localServiceExport.Name, localServiceExport.Namespace)
 	if err != nil {
-		// some other error. Log and requeue
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionUnknown, "ServiceRetrievalFailed",
-			fmt.Sprintf("Error retrieving the Service: %v", err))
-		klog.Errorf("Error retrieving Service (%s/%s): %v", svcExport.Namespace, svcExport.Name, err)
+		// some other error. Log and requeue to retry later
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ServiceRetrievalFailed", "Error retrieving the Service")
+		return nil, true
+	}
+
+	if !serviceExist {
+		// corresponding service not exist - requeue to retry later, until service is created
+		a.handleServiceExportTransformError(err, localServiceExport,
+			reasonServiceUnavailable, "Service to be exported does not exist, will not upload")
 
 		return nil, true
 	}
 
-	if !found {
-		klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't exist", svcExport.Namespace, svcExport.Name)
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
-			"Service to be exported doesn't exist")
-
-		return nil, true
-	}
-
-	if op == syncer.Update && getLastExportConditionReason(svcExport) != serviceUnavailable {
+	// this is a status update of the local export and service exist.
+	// we want to continue only if the last status is "service unavailable"
+	// which means that service was previously not available and is now available
+	// so the export should be uploaded to the broker
+	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
 		return nil, false
 	}
 
-	svc := obj.(*corev1.Service)
+	svc := serviceObj.(*corev1.Service)
 
-	svcType, ok := getServiceImportType(svc)
-
-	if !ok {
-		a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, invalidServiceType,
-			fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
-		klog.Errorf("Service type %q not supported", svc.Spec.Type)
+	isSupportedServiceType := svc.Spec.Type == "" || svc.Spec.Type == corev1.ServiceTypeClusterIP
+	if !isSupportedServiceType {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"UnsupportedServiceType", fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 
 		return nil, false
 	}
 
-	serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
+	exportSpec, err := mcs.NewExportSpec(svc, localServiceExport, a.clusterID)
+	if err != nil {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ExportSpecCreationFailed", "Error creating service export spec")
 
-	serviceImport.Spec = mcsv1a1.ServiceImportSpec{
-		Ports:                 []mcsv1a1.ServicePort{},
-		Type:                  svcType,
-		SessionAffinityConfig: new(corev1.SessionAffinityConfig),
+		return nil, false
 	}
 
-	serviceImport.Status = mcsv1a1.ServiceImportStatus{
-		Clusters: []mcsv1a1.ClusterStatus{
-			{
-				Cluster: a.clusterID,
-			},
-		},
+	err = exportSpec.MarshalObjectMeta(&brokerServiceExport.ObjectMeta)
+	if err != nil {
+		a.handleServiceExportTransformError(err, localServiceExport,
+			"ExportSpecMarshalFailed", "Error marshaling service export spec to ObjectMeta")
+
+		return nil, false
 	}
 
-	if svcType == mcsv1a1.ClusterSetIP {
-		if a.globalnetEnabled {
-			ip, reason, msg := a.getGlobalIP(svc)
-			if ip == "" {
-				klog.V(log.DEBUG).Infof("Service to be exported (%s/%s) doesn't have a global IP yet", svcExport.Namespace, svcExport.Name)
-				// Globalnet enabled but service doesn't have globalIp yet, Update the status and requeue
-				a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, reason, msg)
+	//TODO: preserve additional information required for globalnet
 
-				return nil, true
-			}
+	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, "AwaitingSync",
+		"Awaiting sync of the ServiceExport to the broker")
 
-			serviceImport.Spec.IPs = []string{ip}
-		} else {
-			serviceImport.Spec.IPs = []string{svc.Spec.ClusterIP}
+	klog.V(log.DEBUG).Infof("Returning ServiceExport: %#v", brokerServiceExport)
+
+	return brokerServiceExport, false
+}
+
+// check whether a broker's service export originates from the local cluster
+func (a *Controller) isRemoteServiceExportOwned(se *mcsv1a1.ServiceExport) bool {
+	return se.GetLabels()[lhconstants.LighthouseLabelSourceCluster] == a.clusterID
+}
+
+func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+	if op != syncer.Update {
+		// we only care about status updates
+		return nil, false
+	}
+
+	brokerServiceExport := obj.(*mcsv1a1.ServiceExport)
+
+	// we only care about service exports originating from the local cluster
+	if !a.isRemoteServiceExportOwned(brokerServiceExport) {
+		return nil, false
+	}
+
+	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on broker %sd",
+		brokerServiceExport.Namespace, brokerServiceExport.Name, op)
+
+	conflictCondition := getServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
+	if conflictCondition == nil {
+		// no conflict condition, do nothing
+		// assuming even if there was a conflict and now resolved, there will be conflict condition
+		// with a status of false
+		return nil, false
+	}
+
+	annotations := brokerServiceExport.GetAnnotations()
+	originName := annotations[lhconstants.OriginName]
+	originNamespace := annotations[lhconstants.OriginNamespace]
+
+	// update conflict status in local service export to reflect broker's state.
+	// use own clock instead of broker's clock for time consistency with other status updates
+	a.updateExportedServiceStatus(originName, originNamespace,
+		conflictCondition.Type, conflictCondition.Status, *conflictCondition.Reason, *conflictCondition.Message)
+
+	return nil, false
+}
+
+func getServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
+	for i := range status.Conditions {
+		// iterate in reverse to get the last condition of the requested type
+		// (assuming new conditions are appended at the end of slice)
+		c := status.Conditions[len(status.Conditions)-1-i]
+		if c.Type == conditionType {
+			return &c
 		}
-
-		serviceImport.Spec.Ports = a.getPortsForService(svc)
-		/* We also store the clusterIP in an annotation as an optimization to recover it in case the IPs are
-		cleared out when here's no backing Endpoint pods.
-		*/
-		serviceImport.Annotations[clusterIP] = serviceImport.Spec.IPs[0]
 	}
-
-	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, "AwaitingSync",
-		"Awaiting sync of the ServiceImport to the broker")
-
-	klog.V(log.DEBUG).Infof("Returning ServiceImport: %#v", serviceImport)
-
-	return serviceImport, false
+	return nil
 }
 
 func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
@@ -327,18 +434,6 @@ func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
 	return ""
 }
 
-func getServiceImportType(service *corev1.Service) (mcsv1a1.ServiceImportType, bool) {
-	if service.Spec.Type != "" && service.Spec.Type != corev1.ServiceTypeClusterIP {
-		return "", false
-	}
-
-	if service.Spec.ClusterIP == corev1.ClusterIPNone {
-		return mcsv1a1.Headless, true
-	}
-
-	return mcsv1a1.ClusterSetIP, true
-}
-
 func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
 	if op == syncer.Delete {
 		return
@@ -346,20 +441,44 @@ func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syn
 
 	serviceImport := synced.(*mcsv1a1.ServiceImport)
 
-	a.updateExportedServiceStatus(serviceImport.GetAnnotations()[lhconstants.OriginName],
-		serviceImport.GetAnnotations()[lhconstants.OriginNamespace], corev1.ConditionTrue, "",
+	annotations := serviceImport.GetAnnotations()
+	a.updateExportedServiceStatus(annotations[lhconstants.OriginName], annotations[lhconstants.OriginNamespace],
+		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
 		"Service was successfully synced to the broker")
 }
 
-func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syncer.Operation) {
+	if op == syncer.Delete {
+		return
+	}
+
+	serviceExport := synced.(*mcsv1a1.ServiceExport)
+
+	annotations := serviceExport.GetAnnotations()
+	a.updateExportedServiceStatus(
+		annotations[lhconstants.OriginName],
+		annotations[lhconstants.OriginNamespace],
+		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
+		"ServiceExport was successfully synced to the broker")
+}
+
+func (a *Controller) serviceSyncerShouldProcessResource(_ *unstructured.Unstructured, op syncer.Operation) bool {
+	// we only care about service deletion so that we are able to delete corresponding exports from the broker
+	// actually functionality will be the same without this function because there is a subsequent check at the
+	// transform function, but it prevents unnecessary verbose logging
+	return op == syncer.Delete
+}
+
+func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Delete {
 		// Ignore create/update
 		return nil, false
 	}
 
 	svc := obj.(*corev1.Service)
+	klog.V(log.DEBUG).Infof("Service deleted: %s/%s", svc.Name, svc.Namespace)
 
-	obj, found, err := a.serviceExportSyncer.GetResource(svc.Name, svc.Namespace)
+	obj, found, err := a.serviceExportUploader.GetResource(svc.Name, svc.Namespace)
 	if err != nil {
 		// some other error. Log and requeue
 		klog.Errorf("Error retrieving ServiceExport for Service (%s/%s): %v", svc.Namespace, svc.Name, err)
@@ -367,24 +486,31 @@ func (a *Controller) serviceToRemoteServiceImport(obj runtime.Object, numRequeue
 	}
 
 	if !found {
-		// Service Export not created yet
+		klog.V(log.DEBUG).Infof("ServiceExport not found for deleted service: %s/%s", svc.Namespace, svc.Name)
 		return nil, false
 	}
 
-	svcExport := obj.(*mcsv1a1.ServiceExport)
+	localServiceExport := obj.(*mcsv1a1.ServiceExport)
 
-	serviceImport := a.newServiceImport(svcExport.Name, svcExport.Namespace)
+	klog.V(log.DEBUG).Infof("ServiceExport found for deleted service: %s/%s, will delete broker's copy",
+		localServiceExport.Name, localServiceExport.Namespace)
 
-	// Update the status and requeue
-	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace, corev1.ConditionFalse, serviceUnavailable,
-		"Service to be exported doesn't exist")
+	// rename the service export to expected name on broker so that federator can find and delete it
+	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 
-	return serviceImport, false
+	// Update the local export status and requeue
+	// this will make service export upload syncer to retry syncing until service is re-created
+	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reasonServiceUnavailable, "Service to be exported was deleted")
+
+	return brokerServiceExport, false
 }
 
-func (a *Controller) updateExportedServiceStatus(name, namespace string, status corev1.ConditionStatus, reason, msg string) {
+func (a *Controller) updateExportedServiceStatus(name, namespace string,
+	conditionType mcsv1a1.ServiceExportConditionType, status corev1.ConditionStatus, reason, msg string) {
+
 	klog.V(log.DEBUG).Infof("updateExportedServiceStatus for (%s/%s) - Type: %q, Status: %q, Reason: %q, Message: %q",
-		namespace, name, mcsv1a1.ServiceExportValid, status, reason, msg)
+		namespace, name, conditionType, status, reason, msg)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		toUpdate, err := a.getServiceExport(name, namespace)
@@ -397,7 +523,7 @@ func (a *Controller) updateExportedServiceStatus(name, namespace string, status 
 
 		now := metav1.Now()
 		exportCondition := mcsv1a1.ServiceExportCondition{
-			Type:               mcsv1a1.ServiceExportValid,
+			Type:               conditionType,
 			Status:             status,
 			LastTransitionTime: &now,
 			Reason:             &reason,
@@ -455,6 +581,24 @@ func serviceExportConditionEqual(c1, c2 *mcsv1a1.ServiceExportCondition) bool {
 		reflect.DeepEqual(c1.Message, c2.Message)
 }
 
+func (a *Controller) newServiceExport(name, namespace string) *mcsv1a1.ServiceExport {
+	return &mcsv1a1.ServiceExport{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      a.getObjectNameWithClusterID(name, namespace),
+			Namespace: namespace,
+			Annotations: map[string]string{
+				lhconstants.OriginName:      name,
+				lhconstants.OriginNamespace: namespace,
+			},
+			Labels: map[string]string{
+				lhconstants.LighthouseLabelSourceName:    name,
+				lhconstants.LabelSourceNamespace:         namespace,
+				lhconstants.LighthouseLabelSourceCluster: a.clusterID,
+			},
+		},
+	}
+}
+
 func (a *Controller) newServiceImport(name, namespace string) *mcsv1a1.ServiceImport {
 	return &mcsv1a1.ServiceImport{
 		ObjectMeta: metav1.ObjectMeta{
@@ -490,22 +634,18 @@ func (a *Controller) getObjectNameWithClusterID(name, namespace string) string {
 	return name + "-" + namespace + "-" + a.clusterID
 }
 
-func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
 	endpointSlice := obj.(*discovery.EndpointSlice)
 	endpointSlice.Namespace = endpointSlice.GetObjectMeta().GetLabels()[lhconstants.LabelSourceNamespace]
 
 	return endpointSlice, false
 }
 
-func (a *Controller) filterLocalEndpointSlices(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
-	endpointSlice := obj.(*discovery.EndpointSlice)
-	labels := endpointSlice.GetObjectMeta().GetLabels()
-
-	if labels[discovery.LabelManagedBy] != lhconstants.LabelValueManagedBy {
-		return nil, false
-	}
-
-	return obj, false
+func (a *Controller) endpointSliceSyncerShouldProcessResource(obj *unstructured.Unstructured, _ syncer.Operation) bool {
+	// we only want to sync local endpoint slices managed by submariner
+	// filter here and not in transform() prevents unnecessary verbose logs
+	labels := obj.GetLabels()
+	return labels[discovery.LabelManagedBy] == lhconstants.LabelValueManagedBy
 }
 
 func (a *Controller) getGlobalIP(service *corev1.Service) (ip, reason, msg string) {
@@ -528,4 +668,14 @@ func (a *Controller) getIngressIP(name, namespace string) (*IngressIP, bool) {
 	}
 
 	return parseIngressIP(obj), true
+}
+
+func (a *Controller) handleServiceExportTransformError(err error, svcExport *mcsv1a1.ServiceExport, reason string, errMessage string) {
+	if err == nil {
+		return
+	}
+	klog.Errorf("%s (%s/%s): %v", svcExport.Name, svcExport.Namespace, errMessage)
+	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason,
+		fmt.Sprintf("%s: %v", errMessage, err))
 }

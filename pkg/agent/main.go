@@ -55,7 +55,7 @@ func main() {
 	} else if verbosity := os.Getenv("SUBMARINER_VERBOSITY"); verbosity != "" {
 		os.Args = append(os.Args, fmt.Sprintf("-v=%s", verbosity))
 	} else {
-		os.Args = append(os.Args, "-v=2")
+		os.Args = append(os.Args, "-v=5") // todo: change back the default to 2
 	}
 
 	klog.InitFlags(nil)
@@ -107,8 +107,10 @@ func main() {
 		Scheme:          scheme.Scheme,
 	}, kubeClientSet,
 		controller.AgentConfig{
-			ServiceImportCounterName: "submariner_service_import",
-			ServiceExportCounterName: "submariner_service_export",
+			ServiceImportCounterName:                "submariner_service_import",
+			ServiceExportCounterName:                "submariner_service_export",
+			ServiceExportUploadsCounterName:         "submariner_service_export_uploads",
+			ServiceExportStatusDownloadsCounterName: "submariner_service_export_status_downloads",
 		})
 	if err != nil {
 		klog.Fatalf("Failed to create lighthouse agent: %v", err)
