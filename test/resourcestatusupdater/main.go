@@ -65,8 +65,7 @@ func main() {
 	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
 	panicOnError(err)
 
-	clientset, err := kubernetes.NewForConfig(restConfig)
-	panicOnError(err)
+	clientset := kubernetes.NewForConfigOrDie(restConfig)
 
 	// list pods for sanity check, to verify that we can reach the cluster
 	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
