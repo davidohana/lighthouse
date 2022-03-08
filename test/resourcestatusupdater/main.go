@@ -95,7 +95,7 @@ func main() {
 	se.Status.Conditions = append(se.Status.Conditions, exportCondition)
 	fmt.Printf("now: %d conditions in ServiceExport\n", len(se.Status.Conditions))
 
-	_, err = nsExports.Update(context.TODO(), se, metav1.UpdateOptions{})
+	_, err = nsExports.UpdateStatus(context.TODO(), se, metav1.UpdateOptions{})
 	panicOnError(err)
 
 	println("Done")
