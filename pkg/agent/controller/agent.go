@@ -45,7 +45,9 @@ import (
 )
 
 const (
-	reasonServiceUnavailable = "ServiceUnavailable"
+	ReasonServiceUnavailable     = "ServiceUnavailable"
+	ReasonAwaitingSync           = "AwaitingSync"
+	ReasonUnsupportedServiceType = "UnsupportedServiceType"
 )
 
 type AgentConfig struct {
@@ -356,7 +358,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	if !serviceExist {
 		// corresponding service not exist - requeue to retry later, until service is created
 		a.handleServiceExportTransformError(err, localServiceExport,
-			reasonServiceUnavailable, "Service to be exported does not exist, will not upload")
+			ReasonServiceUnavailable, "Service to be exported does not exist, will not upload")
 
 		return nil, true
 	}
@@ -365,7 +367,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	// we want to continue only if the last status is "service unavailable"
 	// which means that service was previously not available and is now available
 	// so the export should be uploaded to the broker
-	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
+	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != ReasonServiceUnavailable {
 		return nil, false
 	}
 
@@ -374,7 +376,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	isSupportedServiceType := svc.Spec.Type == "" || svc.Spec.Type == corev1.ServiceTypeClusterIP
 	if !isSupportedServiceType {
 		a.handleServiceExportTransformError(err, localServiceExport,
-			"UnsupportedServiceType", fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
+			ReasonUnsupportedServiceType, fmt.Sprintf("Service of type %v not supported", svc.Spec.Type))
 
 		return nil, false
 	}
@@ -435,7 +437,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	//}
 
 	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
-		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, "AwaitingSync",
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, ReasonAwaitingSync,
 		"Awaiting sync of the ServiceExport to the broker")
 
 	logger.V(log.DEBUG).Info("Returning ServiceExport", "value", brokerServiceExport)
@@ -464,7 +466,7 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, o
 	logger.V(log.DEBUG).Info(fmt.Sprintf("ServiceExport %s/%s on broker %sd",
 		brokerServiceExport.Namespace, brokerServiceExport.Name, op))
 
-	conflictCondition := getServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
+	conflictCondition := GetServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
 	if conflictCondition == nil {
 		// no conflict condition, do nothing
 		// assuming even if there was a conflict and now resolved, there will be conflict condition
@@ -484,7 +486,7 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, o
 	return nil, false
 }
 
-func getServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
+func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
 	for i := range status.Conditions {
 		// iterate in reverse to get the last condition of the requested type
 		// (assuming new conditions are appended at the end of slice)
@@ -572,7 +574,7 @@ func (a *Controller) serviceToRemoteServiceExport(obj runtime.Object, _ int, op 
 	// Update the local export status and requeue
 	// this will make service export upload syncer to retry syncing until service is re-created
 	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
-		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reasonServiceUnavailable, "Service to be exported was deleted")
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, ReasonServiceUnavailable, "Service to be exported was deleted")
 
 	return brokerServiceExport, false
 }
@@ -623,6 +625,10 @@ func (a *Controller) updateExportedServiceStatus(name, namespace string,
 		}
 
 		_, err = a.serviceExportClient.Namespace(toUpdate.Namespace).UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
+
+		if err != nil {
+			logger.Info("Failed to update service export status", "error", err)
+		}
 
 		return errors.Wrap(err, "error from UpdateStatus")
 	})
@@ -703,7 +709,11 @@ func (a *Controller) getPortsForService(service *corev1.Service) []mcsv1a1.Servi
 }
 
 func (a *Controller) getObjectNameWithClusterID(name, namespace string) string {
-	return name + "-" + namespace + "-" + a.clusterID
+	return GetObjectNameWithClusterID(name, namespace, a.clusterID)
+}
+
+func GetObjectNameWithClusterID(name, namespace string, clusterID string) string {
+	return name + "-" + namespace + "-" + clusterID
 }
 
 func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
@@ -754,12 +764,8 @@ func (a *Controller) getIngressIP(name, namespace string) (*IngressIP, bool) {
 }
 
 func (a *Controller) handleServiceExportTransformError(err error, svcExport *mcsv1a1.ServiceExport, reason string, errMessage string) {
-	if err == nil {
-		return
-	}
 	logger.Error(err, "ServiceExport transform failed: "+errMessage,
 		"name", svcExport.Name, "namespace", svcExport.Namespace)
 	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
-		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason,
-		fmt.Sprintf("%s: %v", errMessage, err))
+		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason, errMessage)
 }

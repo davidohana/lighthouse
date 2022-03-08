@@ -20,15 +20,18 @@ package controller_test
 import (
 	. "github.com/onsi/ginkgo"
 	"github.com/submariner-io/lighthouse/pkg/agent/controller"
+	"github.com/submariner-io/lighthouse/pkg/mcs"
 	corev1 "k8s.io/api/core/v1"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
+	"time"
 )
+import . "github.com/onsi/gomega"
 
-var _ = Describe("ServiceImport syncing", func() {
+var _ = Describe("ServiceExport syncing", func() {
 	var t *testDriver
 
 	BeforeEach(func() {
-		t = newTestDiver()
+		t = newTestDriver()
 	})
 
 	JustBeforeEach(func() {
@@ -41,70 +44,68 @@ var _ = Describe("ServiceImport syncing", func() {
 
 	When("a ServiceExport is created", func() {
 		When("the Service already exists", func() {
-			It("should correctly sync a ServiceImport and update the ServiceExport status", func() {
+			It("should update the ServiceExport status and upload to the broker", func() {
+				t.awaitNoServiceExportOnBroker()
 				t.createService()
 				t.createServiceExport()
-				t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+				t.awaitServiceExported()
 			})
 		})
 
 		When("the Service doesn't initially exist", func() {
-			It("should initially update the ServiceExport status to Initialized and eventually sync a ServiceImport", func() {
+			It("should initially update the ServiceExport status to Valid and upload after service is created", func() {
 				t.createServiceExport()
-				t.awaitServiceUnavailableStatus(0)
+				t.awaitServiceUnavailableStatus()
+				t.awaitNoServiceExportOnBroker()
 
 				t.createService()
-				t.awaitServiceExported(t.service.Spec.ClusterIP, 1)
+				t.awaitServiceExported()
 			})
 		})
 	})
 
-	When("a ServiceExport is deleted after a ServiceImport is synced", func() {
-		It("should delete the ServiceImport", func() {
+	When("a ServiceExport is deleted after it was synced", func() {
+		It("should delete the ServiceExport on the Broker", func() {
 			t.createService()
 			t.createServiceExport()
-			t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+			t.awaitServiceExported()
 
 			t.deleteServiceExport()
-			t.awaitServiceUnexported()
+			t.awaitNoServiceExportOnBroker()
 		})
 	})
 
 	When("an exported Service is deleted and recreated while the ServiceExport still exists", func() {
-		It("should delete and recreate the ServiceImport", func() {
+		It("should delete and recreate the ServiceExport on the broker", func() {
 			t.createService()
 			t.createServiceExport()
-			nextStatusIndex := t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+			t.awaitServiceExported()
 
 			t.deleteService()
-			t.awaitServiceUnexported()
-			t.awaitServiceUnavailableStatus(nextStatusIndex)
+			t.awaitNoServiceExportOnBroker()
+			t.awaitServiceUnavailableStatus()
 
 			t.createService()
-			t.awaitServiceExported(t.service.Spec.ClusterIP, nextStatusIndex+1)
+			t.awaitServiceExported()
 		})
 	})
 
-	When("the ServiceImport sync initially fails", func() {
+	When("the ServiceExport sync initially fails", func() {
 		BeforeEach(func() {
-			t.cluster1.localServiceImportClient.PersistentFailOnCreate.Store("mock create error")
+			t.brokerServiceExportClient.PersistentFailOnCreate.Store("mock create error")
 		})
 
 		It("should not update the ServiceExport status to Exported until the sync is successful", func() {
 			t.createService()
 			t.createServiceExport()
 
-			message := "AwaitingSync"
-			t.awaitServiceExportStatus(0, newServiceExportCondition(corev1.ConditionFalse, message))
+			condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonAwaitingSync)
+			t.awaitLocalServiceExport(condition)
 
-			t.awaitNotServiceExportStatus(&mcsv1a1.ServiceExportCondition{
-				Type:    mcsv1a1.ServiceExportValid,
-				Status:  corev1.ConditionTrue,
-				Message: &message,
-			})
+			t.awaitNoServiceExportOnBroker()
 
-			t.cluster1.localServiceImportClient.PersistentFailOnCreate.Store("")
-			t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+			t.brokerServiceExportClient.PersistentFailOnCreate.Store("")
+			t.awaitServiceExported()
 		})
 	})
 
@@ -124,7 +125,10 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.createService()
 			t.createServiceExport()
 
-			t.awaitServiceExportStatus(0, newServiceExportCondition(corev1.ConditionTrue, ""))
+			t.awaitServiceExported()
+
+			serviceExport := t.awaitLocalServiceExport(nil)
+			Expect(len(serviceExport.Status.Conditions)).To(Equal(1))
 		})
 	})
 
@@ -133,12 +137,14 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.service.Spec.Type = corev1.ServiceTypeNodePort
 		})
 
-		It("should update the ServiceExport status and not sync a ServiceImport", func() {
+		It("should update the ServiceExport status and not sync it", func() {
 			t.createService()
 			t.createServiceExport()
 
-			t.awaitServiceExportStatus(0, newServiceExportCondition(corev1.ConditionFalse, "UnsupportedServiceType"))
-			t.awaitNoServiceImport(t.brokerServiceImportClient)
+			condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonUnsupportedServiceType)
+			t.awaitLocalServiceExport(condition)
+
+			t.awaitNoServiceExportOnBroker()
 		})
 	})
 
@@ -152,16 +158,27 @@ var _ = Describe("ServiceImport syncing", func() {
 				},
 				{
 					Name:     "eth1",
-					Protocol: corev1.ProtocolTCP,
+					Protocol: corev1.ProtocolSCTP,
 					Port:     1234,
 				},
 			}
 		})
 
-		It("should set the appropriate port information in the ServiceImport", func() {
+		It("should set the appropriate port information in the ServiceExport", func() {
 			t.createService()
 			t.createServiceExport()
-			t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+			t.awaitServiceExported() // t.service.Spec.ClusterIP, 0
+
+			serviceExport := t.awaitBrokerServiceExport(nil)
+			exportSpec := &mcs.ExportSpec{}
+			err := exportSpec.UnmarshalObjectMeta(&serviceExport.ObjectMeta)
+			Expect(err).To(BeNil())
+			Expect(len(exportSpec.Service.Ports)).To(Equal(2))
+			Expect(exportSpec.Service.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			Expect(exportSpec.Service.Ports[1].Protocol).To(Equal(corev1.ProtocolSCTP))
+			Expect(exportSpec.Service.Ports[0].Port).To(BeNumerically("==", 123))
+			Expect(exportSpec.Service.Ports[1].Port).To(BeNumerically("==", 1234))
+			Expect(time.Now().Sub(exportSpec.CreatedAt.Time)).To(BeNumerically("<", 60*time.Second))
 		})
 	})
 })

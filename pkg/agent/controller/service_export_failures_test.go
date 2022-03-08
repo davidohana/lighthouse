@@ -18,18 +18,14 @@ limitations under the License.
 package controller_test
 
 import (
-	"errors"
-
 	. "github.com/onsi/ginkgo"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 var _ = Describe("Service export failures", func() {
 	var t *testDriver
 
 	BeforeEach(func() {
-		t = newTestDiver()
+		t = newTestDriver()
 	})
 
 	JustBeforeEach(func() {
@@ -45,12 +41,13 @@ var _ = Describe("Service export failures", func() {
 
 	When("a conflict initially occurs when updating the ServiceExport status", func() {
 		BeforeEach(func() {
-			t.cluster1.localServiceExportClient.FailOnUpdate = apierrors.NewConflict(schema.GroupResource{}, t.serviceExport.Name,
-				errors.New("fake conflict"))
+			//t.cluster1.localServiceExportClient.PersistentFailOnUpdate.Store("conflict")
+			//= apierrors.NewConflict(schema.GroupResource{}, t.serviceExport.Name,
+			//	errors.New("fake conflict"))
 		})
 
 		It("should eventually update the ServiceExport status", func() {
-			t.awaitServiceExported(t.service.Spec.ClusterIP, 0)
+			t.awaitServiceExported()
 		})
 	})
 })
