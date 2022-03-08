@@ -20,6 +20,7 @@ package lhutil
 
 import (
 	"fmt"
+	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -87,4 +88,16 @@ func ServiceExportListFilter(objmd metav1.ObjectMeta) (*client.ListOptions, erro
 		lhconst.LighthouseLabelSourceName: labels[lhconst.LighthouseLabelSourceName],
 	}.ApplyToList(opts)
 	return opts, nil
+}
+
+func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
+	for i := range status.Conditions {
+		// iterate in reverse to get the last condition of the requested type
+		// (assuming new conditions are appended at the end of slice)
+		c := status.Conditions[len(status.Conditions)-1-i]
+		if c.Type == conditionType {
+			return &c
+		}
+	}
+	return nil
 }

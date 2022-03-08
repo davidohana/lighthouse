@@ -20,6 +20,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"github.com/submariner-io/lighthouse/pkg/mcs"
 	"reflect"
 
@@ -353,11 +354,14 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	}
 
 	// this is a status update of the local export and service exist.
-	// we want to continue only if the last status is "service unavailable"
+	// we want to continue only if the last "Valid" condition of the export is "service unavailable"
 	// which means that service was previously not available and is now available
 	// so the export should be uploaded to the broker
-	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != reasonServiceUnavailable {
-		return nil, false
+	if op == syncer.Update {
+		validCond := lhutil.GetServiceExportCondition(&localServiceExport.Status, mcsv1a1.ServiceExportValid)
+		if validCond == nil || *validCond.Reason != reasonServiceUnavailable {
+			return nil, false
+		}
 	}
 
 	svc := serviceObj.(*corev1.Service)
@@ -418,7 +422,7 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, o
 	klog.V(log.DEBUG).Infof("ServiceExport %s/%s on broker %sd",
 		brokerServiceExport.Namespace, brokerServiceExport.Name, op)
 
-	conflictCondition := getServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
+	conflictCondition := lhutil.GetServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
 	if conflictCondition == nil {
 		// no conflict condition, do nothing
 		// assuming even if there was a conflict and now resolved, there will be conflict condition
@@ -436,27 +440,6 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, o
 		conflictCondition.Type, conflictCondition.Status, *conflictCondition.Reason, *conflictCondition.Message)
 
 	return nil, false
-}
-
-func getServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
-	for i := range status.Conditions {
-		// iterate in reverse to get the last condition of the requested type
-		// (assuming new conditions are appended at the end of slice)
-		c := status.Conditions[len(status.Conditions)-1-i]
-		if c.Type == conditionType {
-			return &c
-		}
-	}
-	return nil
-}
-
-func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) string {
-	numCond := len(svcExport.Status.Conditions)
-	if numCond > 0 && svcExport.Status.Conditions[numCond-1].Reason != nil {
-		return *svcExport.Status.Conditions[numCond-1].Reason
-	}
-
-	return ""
 }
 
 func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
@@ -656,7 +639,7 @@ func (a *Controller) getPortsForService(service *corev1.Service) []mcsv1a1.Servi
 }
 
 func (a *Controller) getObjectNameWithClusterID(name, namespace string) string {
-	return name + "-" + namespace + "-" + a.clusterID
+	return lhutil.GenerateObjectName(name, namespace, a.clusterID)
 }
 
 func (a *Controller) remoteEndpointSliceToLocal(obj runtime.Object, _ int, _ syncer.Operation) (runtime.Object, bool) {
