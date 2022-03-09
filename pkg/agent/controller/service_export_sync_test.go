@@ -255,8 +255,41 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.afterEach()                                                         // stop agent controller on all clusters
 			t = newTestDriver()                                                   // create a new driver - data stores are now empty
 			test.CreateResource(t.brokerServiceExportClient, brokerServiceExport) // create export on broker only
+			t.createService()                                                     // recreate service so that only local export is missing
 			t.justBeforeEach()                                                    // start agent controller on all clusters
 			t.awaitNoServiceExportOnBroker()                                      // ensure that the export is deleted from broker
+			t.createLocalServiceExport()                                          // recreate local export online
+			t.awaitServiceExported()                                              // ensure export is synced to broker
+		})
+	})
+
+	When("local service is deleted out of band after sync", func() {
+		It("should delete export from the broker datastore on reconciliation", func() {
+			// simulate sync to broker to get the export state as it should be on the broker
+			t.createService()
+			t.createLocalServiceExport()
+			t.awaitServiceExported()
+			brokerServiceExport := t.awaitBrokerServiceExport(nil)
+
+			t.afterEach()                                                         // stop agent controller on all clusters
+			t = newTestDriver()                                                   // create a new driver - data stores are now empty
+			test.CreateResource(t.brokerServiceExportClient, brokerServiceExport) // create export on broker only
+			t.justBeforeEach()                                                    // start agent controller on all clusters, both export and service are missing
+			t.awaitNoServiceExportOnBroker()                                      // ensure that the export is deleted from broker
+			t.createLocalServiceExport()                                          // recreate local export online
+			t.createService()                                                     // recreate local service online
+			t.awaitServiceExported()                                              // ensure export is synced to broker
+		})
+	})
+
+	When("local service and service export are created out of band", func() {
+		It("should sync export to the broker datastore on reconciliation", func() {
+			t.afterEach()                // stop agent controller on all clusters
+			t = newTestDriver()          // create a new driver - data stores are now empty
+			t.createService()            // create local service oob
+			t.createLocalServiceExport() // recreate local export online
+			t.justBeforeEach()           // start agent controller on all clusters, both export and service are missing
+			t.awaitServiceExported()     // ensure export is synced to broker
 		})
 	})
 })
