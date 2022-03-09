@@ -20,6 +20,7 @@ package lhutil
 
 import (
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -99,4 +100,15 @@ func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, ct mcsv1a1.S
 	}
 
 	return latestCond
+}
+
+func CreateServiceExportCondition(ct mcsv1a1.ServiceExportConditionType, cs corev1.ConditionStatus, reason, msg string) *mcsv1a1.ServiceExportCondition {
+	now := metav1.Now()
+	return &mcsv1a1.ServiceExportCondition{
+		Type:               ct,
+		Status:             cs,
+		LastTransitionTime: &now,
+		Reason:             &reason,
+		Message:            &msg,
+	}
 }

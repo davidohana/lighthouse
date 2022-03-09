@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/log/kzerolog"
+	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"k8s.io/klog"
 	"math/big"
 	"reflect"
@@ -695,8 +696,8 @@ func (t *testDriver) awaitNotServiceExportStatus(notCond *mcsv1a1.ServiceExportC
 		}
 
 		last := &se.Status.Conditions[len(se.Status.Conditions)-1]
-		if last.Message == notCond.Message && last.Status == notCond.Status {
-			return false, fmt.Errorf("Received unexpected %#v", last)
+		if last.Type == notCond.Type && last.Message == notCond.Message && last.Status == notCond.Status {
+			return false, fmt.Errorf("received unexpected %#v", last)
 		}
 
 		return false, nil
@@ -763,11 +764,7 @@ func (t *testDriver) endpointIPs() []string {
 
 func newServiceExportCondition(condType mcsv1a1.ServiceExportConditionType, status corev1.ConditionStatus,
 	reason controller.ServiceExportConditionReason) *mcsv1a1.ServiceExportCondition {
-	return &mcsv1a1.ServiceExportCondition{
-		Type:   condType,
-		Status: status,
-		Reason: (*string)(&reason),
-	}
+	return lhutil.CreateServiceExportCondition(condType, status, string(reason), "")
 }
 
 func setIngressIPConditions(ingressIP *unstructured.Unstructured, conditions ...metav1.Condition) {

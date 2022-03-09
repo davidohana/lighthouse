@@ -567,17 +567,10 @@ func (a *Controller) updateExportedServiceStatus(name, namespace string,
 			return err
 		}
 
-		now := metav1.Now()
-		exportCondition := mcsv1a1.ServiceExportCondition{
-			Type:               conditionType,
-			Status:             status,
-			LastTransitionTime: &now,
-			Reason:             (*string)(&reason),
-			Message:            &msg,
-		}
+		exportCondition := lhutil.CreateServiceExportCondition(conditionType, status, string(reason), msg)
 
 		numCond := len(toUpdate.Status.Conditions)
-		if numCond > 0 && serviceExportConditionEqual(&toUpdate.Status.Conditions[numCond-1], &exportCondition) {
+		if numCond > 0 && serviceExportConditionEqual(&toUpdate.Status.Conditions[numCond-1], exportCondition) {
 			lastCond := toUpdate.Status.Conditions[numCond-1]
 			seLog.V(log.TRACE).Info("Last ServiceExportCondition equal - not updating status",
 				"condition", lastCond)
@@ -587,9 +580,9 @@ func (a *Controller) updateExportedServiceStatus(name, namespace string,
 		if numCond >= MaxExportStatusConditions {
 			copy(toUpdate.Status.Conditions[0:], toUpdate.Status.Conditions[1:])
 			toUpdate.Status.Conditions = toUpdate.Status.Conditions[:MaxExportStatusConditions]
-			toUpdate.Status.Conditions[MaxExportStatusConditions-1] = exportCondition
+			toUpdate.Status.Conditions[MaxExportStatusConditions-1] = *exportCondition
 		} else {
-			toUpdate.Status.Conditions = append(toUpdate.Status.Conditions, exportCondition)
+			toUpdate.Status.Conditions = append(toUpdate.Status.Conditions, *exportCondition)
 		}
 
 		raw, err := resource.ToUnstructured(toUpdate)
