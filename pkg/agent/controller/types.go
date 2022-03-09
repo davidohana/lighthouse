@@ -18,6 +18,7 @@ limitations under the License.
 package controller
 
 import (
+	"github.com/submariner-io/admiral/pkg/federate"
 	"sync"
 
 	"github.com/submariner-io/admiral/pkg/syncer"
@@ -31,18 +32,22 @@ import (
 )
 
 type Controller struct {
-	clusterID           string
-	globalnetEnabled    bool
-	namespace           string
-	kubeClientSet       kubernetes.Interface
-	serviceExportClient dynamic.NamespaceableResourceInterface
-	//serviceExportSyncer           syncer.Interface
+	clusterID                     string
+	globalnetEnabled              bool
+	namespace                     string
+	kubeClientSet                 kubernetes.Interface
+	serviceExportClient           dynamic.NamespaceableResourceInterface
 	serviceExportUploader         syncer.Interface
 	serviceExportStatusDownloader syncer.Interface
-	serviceImportSyncer           *broker.Syncer
+	serviceImportDownloader       syncer.Interface
 	endpointSliceSyncer           *broker.Syncer
 	serviceSyncer                 syncer.Interface
 	serviceImportController       *ServiceImportController
+	localClient                   dynamic.Interface
+	localFederator                federate.Federator
+	brokerClient                  dynamic.Interface
+	brokerFederator               federate.Federator
+	brokerNamespace               string
 }
 
 type AgentSpecification struct {

@@ -18,6 +18,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/federate"
 	"github.com/submariner-io/admiral/pkg/log"
@@ -25,10 +26,10 @@ import (
 	"github.com/submariner-io/admiral/pkg/watcher"
 	lhconstants "github.com/submariner-io/lighthouse/pkg/constants"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
@@ -44,11 +45,15 @@ func newServiceImportController(spec *AgentSpecification, serviceSyncer syncer.I
 
 	var err error
 
+	// this syncer is responsible for watching local service imports (for cluster-local exports).
+	// an endpoint controller is created for each service import
+	// the endpoint controller creates a local endpoint slice for each endpoint
 	controller.serviceImportSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceImport watcher",
 		SourceClient:    localClient,
 		SourceNamespace: spec.Namespace,
-		Direction:       syncer.LocalToRemote,
+		Direction:       syncer.None, // we want custom ShouldProcess rules - only imports of this cluster
+		ShouldProcess:   controller.shouldProcessServiceImport,
 		RestMapper:      restMapper,
 		Federator:       federate.NewNoopFederator(),
 		ResourceType:    &mcsv1a1.ServiceImport{},
@@ -85,7 +90,7 @@ func (c *ServiceImportController) start(stopCh <-chan struct{}) error {
 			return true
 		})
 
-		klog.Infof("ServiceImport Controller stopped")
+		logger.Info("ServiceImport Controller stopped")
 	}()
 
 	if err := c.serviceImportSyncer.Start(stopCh); err != nil {
@@ -95,9 +100,14 @@ func (c *ServiceImportController) start(stopCh <-chan struct{}) error {
 	return nil
 }
 
+func (c *ServiceImportController) shouldProcessServiceImport(svcImportObj *unstructured.Unstructured, op syncer.Operation) bool {
+	labels := svcImportObj.GetLabels()
+	return labels[lhconstants.LighthouseLabelSourceCluster] == c.clusterID
+}
+
 func (c *ServiceImportController) serviceImportCreatedOrUpdated(serviceImport *mcsv1a1.ServiceImport, key string) bool {
 	if _, found := c.endpointControllers.Load(key); found {
-		klog.V(log.DEBUG).Infof("The endpoint controller is already running for %q", key)
+		logger.V(log.DEBUG).Info("The endpoint controller is already running", "key", key)
 		return false
 	}
 
@@ -112,7 +122,7 @@ func (c *ServiceImportController) serviceImportCreatedOrUpdated(serviceImport *m
 	endpointController, err := startEndpointController(c.localClient, c.restMapper, c.scheme,
 		serviceImport, serviceNameSpace, serviceName, c.clusterID, c.globalIngressIPCache)
 	if err != nil {
-		klog.Errorf(err.Error())
+		logger.Error(err, "Failed to start endpoint controller")
 		return true
 	}
 
@@ -138,7 +148,7 @@ func (c *ServiceImportController) serviceImportToEndpointController(obj runtime.
 	serviceImport := obj.(*mcsv1a1.ServiceImport)
 	key, _ := cache.MetaNamespaceKeyFunc(serviceImport)
 
-	klog.V(log.DEBUG).Infof("ServiceImport %q %sd", key, op)
+	logger.V(log.DEBUG).Info(fmt.Sprintf("ServiceImport %s %sd", key, op))
 
 	if op == syncer.Create || op == syncer.Update {
 		return nil, c.serviceImportCreatedOrUpdated(serviceImport, key)

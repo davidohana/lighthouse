@@ -21,7 +21,11 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"flag"
 	"fmt"
+	"github.com/submariner-io/admiral/pkg/log"
+	"github.com/submariner-io/admiral/pkg/log/kzerolog"
+	"k8s.io/klog"
 	"math/big"
 	"reflect"
 	"sort"
@@ -30,7 +34,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
 	"github.com/submariner-io/admiral/pkg/fake"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
@@ -48,7 +51,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	fakeKubeClient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
@@ -69,7 +71,19 @@ var (
 )
 
 func init() {
-	klog.InitFlags(nil)
+	logLevel := log.DEBUG
+	args := []string{fmt.Sprintf("-v=%d", logLevel)}
+	// set logging verbosity of agent in unit test to DEBUG
+	flags := flag.NewFlagSet("kzerolog", flag.ExitOnError)
+	kzerolog.AddFlags(flags)
+	// nolint:errcheck // Ignore errors; CommandLine is set for ExitOnError.
+	flags.Parse(args)
+	kzerolog.InitK8sLogging()
+
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
+	// nolint:errcheck // Ignore errors; CommandLine is set for ExitOnError.
+	klogFlags.Parse(args)
 
 	err := mcsv1a1.AddToScheme(scheme.Scheme)
 	if err != nil {
@@ -97,6 +111,7 @@ type cluster struct {
 type testDriver struct {
 	cluster1                  cluster
 	cluster2                  cluster
+	brokerServiceExportClient *fake.DynamicResourceClient
 	brokerServiceImportClient *fake.DynamicResourceClient
 	brokerEndpointSliceClient *fake.DynamicResourceClient
 	service                   *corev1.Service
@@ -108,7 +123,7 @@ type testDriver struct {
 	doStart                   bool
 }
 
-func newTestDiver() *testDriver {
+func newTestDriver() *testDriver {
 	syncerScheme := runtime.NewScheme()
 	Expect(corev1.AddToScheme(syncerScheme)).To(Succeed())
 	Expect(discovery.AddToScheme(syncerScheme)).To(Succeed())
@@ -152,8 +167,9 @@ func newTestDiver() *testDriver {
 
 	t.serviceExport = &mcsv1a1.ServiceExport{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      t.service.Name,
-			Namespace: t.service.Namespace,
+			Name:              t.service.Name,
+			Namespace:         t.service.Namespace,
+			CreationTimestamp: metav1.Now(),
 		},
 	}
 
@@ -205,6 +221,9 @@ func newTestDiver() *testDriver {
 
 	t.brokerEndpointSliceClient = t.syncerConfig.BrokerClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
 		&discovery.EndpointSlice{})).Namespace(test.RemoteNamespace).(*fake.DynamicResourceClient)
+
+	t.brokerServiceExportClient = t.syncerConfig.BrokerClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
+		&mcsv1a1.ServiceExport{})).Namespace(test.RemoteNamespace).(*fake.DynamicResourceClient)
 
 	t.cluster1.init(t.syncerConfig)
 	t.cluster2.init(t.syncerConfig)
@@ -290,12 +309,18 @@ func (c *cluster) start(t *testDriver, syncerConfig broker.SyncerConfig) {
 
 	serviceExportStatusDownloadsCounterName := "submariner_service_export_status_downloads" + bigint.String()
 
+	bigint, err = rand.Int(rand.Reader, big.NewInt(1000000))
+	Expect(err).To(Succeed())
+
+	serviceImportDownloadsCounterName := "submariner_service_import_downloads" + bigint.String()
+
 	c.agentController, err = controller.New(&c.agentSpec, syncerConfig, c.localKubeClient,
 		controller.AgentConfig{
 			ServiceImportCounterName:                serviceImportCounterName,
 			ServiceExportCounterName:                serviceExportCounterName,
 			ServiceExportUploadsCounterName:         serviceExportUploadsCounterName,
 			ServiceExportStatusDownloadsCounterName: serviceExportStatusDownloadsCounterName,
+			ServiceImportDownloadsCounterName:       serviceImportDownloadsCounterName,
 		})
 
 	Expect(err).To(Succeed())
@@ -557,6 +582,11 @@ func (t *testDriver) createEndpointIngressIPs() {
 	t.createGlobalIngressIP(t.newHeadlessGlobalIngressIP("not-ready", globalIP3))
 }
 
+func (t *testDriver) awaitNoServiceExportOnBroker() {
+	brokerServiceName := t.getBrokerServiceName()
+	test.AwaitNoResource(t.brokerServiceExportClient, brokerServiceName)
+}
+
 func (t *testDriver) awaitNoServiceImport(client dynamic.ResourceInterface) {
 	test.AwaitNoResource(client, t.service.Name+"-"+t.service.Namespace+"-"+clusterID1)
 }
@@ -565,55 +595,84 @@ func (t *testDriver) awaitNoEndpointSlice(client dynamic.ResourceInterface) {
 	test.AwaitNoResource(client, t.endpoints.Name+"-"+clusterID1)
 }
 
-func (t *testDriver) awaitServiceExportStatus(atIndex int, expCond ...*mcsv1a1.ServiceExportCondition) {
-	var found *mcsv1a1.ServiceExport
+func (t *testDriver) awaitLocalServiceExport(cond *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
+	return t.awaitServiceExport(t.cluster1.localServiceExportClient, t.service.Name, cond)
+}
 
+func (t *testDriver) getBrokerServiceName() string {
+	return controller.GetObjectNameWithClusterID(t.service.Name, t.service.Namespace, clusterID1)
+
+}
+
+func (t *testDriver) awaitBrokerServiceExport(cond *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
+	exportNameOnBroker := t.getBrokerServiceName()
+	return t.awaitServiceExport(t.brokerServiceExportClient, exportNameOnBroker, cond)
+}
+
+func (t *testDriver) awaitServiceExport(client *fake.DynamicResourceClient, exportName string, expectedCondition *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
+	var serviceExportFound *mcsv1a1.ServiceExport
 	err := wait.PollImmediate(50*time.Millisecond, 5*time.Second, func() (bool, error) {
-		obj, err := t.cluster1.localServiceExportClient.Get(context.TODO(), t.service.Name, metav1.GetOptions{})
+		obj, err := client.Get(context.TODO(), exportName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
 			}
-
 			return false, err
 		}
 
 		se := &mcsv1a1.ServiceExport{}
 		Expect(scheme.Scheme.Convert(obj, se, nil)).To(Succeed())
 
-		found = se
+		serviceExportFound = se
 
-		if (atIndex + len(expCond)) != len(se.Status.Conditions) {
+		if expectedCondition == nil {
+			return true, nil
+		}
+
+		conditionFound := controller.GetServiceExportCondition(&se.Status, expectedCondition.Type)
+		if conditionFound == nil {
 			return false, nil
 		}
 
-		j := atIndex
-		for _, exp := range expCond {
-			actual := se.Status.Conditions[j]
-			j++
-			Expect(actual.Type).To(Equal(exp.Type))
-			Expect(actual.Status).To(Equal(exp.Status))
-			Expect(actual.LastTransitionTime).To(Not(BeNil()))
-			Expect(actual.Reason).To(Not(BeNil()))
-			Expect(*actual.Reason).To(Equal(*exp.Reason))
-			Expect(actual.Message).To(Not(BeNil()))
-
-			if exp.Message != nil {
-				Expect(*actual.Message).To(Equal(*exp.Message))
-			}
+		if conditionFound.Status != expectedCondition.Status {
+			return false, nil
 		}
+
+		Expect(conditionFound.LastTransitionTime).To(Not(BeNil()))
+		Expect(conditionFound.Reason).To(Not(BeNil()))
+		Expect(*conditionFound.Reason).To(Equal(*expectedCondition.Reason))
+		Expect(conditionFound.Message).To(Not(BeNil()))
 
 		return true, nil
 	})
 
-	if errors.Is(err, wait.ErrWaitTimeout) {
-		if found == nil {
-			Fail("ServiceExport not found")
-		}
+	if err != nil {
+		Fail(fmt.Sprintf("ServiceExport named %s did not reach expected state:\n"+
+			"%s\n"+
+			"Error: %s. Found export:\n%s",
+			exportName, controller.PrettyPrint(expectedCondition), err, controller.PrettyPrint(serviceExportFound)))
+	}
 
-		Fail(format.Message(found.Status.Conditions, fmt.Sprintf("to contain at index %d", atIndex), expCond))
-	} else {
-		Expect(err).To(Succeed())
+	return serviceExportFound
+}
+
+func (t *testDriver) assertServiceExportStatus(se *mcsv1a1.ServiceExport, atIndex int, expCond ...*mcsv1a1.ServiceExportCondition) {
+	Expect(len(se.Status.Conditions)).To(BeNumerically(">=", atIndex+len(expCond)))
+
+	j := atIndex
+	for _, exp := range expCond {
+		actual := se.Status.Conditions[j]
+		j++
+		Expect(actual.Type).To(Equal(exp.Type))
+		Expect(actual.Status).To(Equal(exp.Status))
+		Expect(actual.LastTransitionTime).To(Not(BeNil()))
+		Expect(actual.Reason).To(Not(BeNil()))
+		Expect(*actual.Reason).To(Equal(*exp.Reason))
+		Expect(actual.Message).To(Not(BeNil()))
+
+		if exp.Message != nil {
+			Expect(*actual.Message).To(Equal(*exp.Message))
+		}
 	}
 }
 
@@ -648,15 +707,20 @@ func (t *testDriver) awaitNotServiceExportStatus(notCond *mcsv1a1.ServiceExportC
 	}
 }
 
-func (t *testDriver) awaitServiceExported(serviceIP string, statusIndex int) int {
-	t.cluster1.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
-	t.awaitBrokerServiceImport(mcsv1a1.ClusterSetIP, serviceIP)
-	t.cluster2.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
+func (t *testDriver) awaitServiceExported() {
+	//t.cluster1.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
+	//t.awaitBrokerServiceImport(mcsv1a1.ClusterSetIP, serviceIP)
+	//t.cluster2.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
 
-	t.awaitServiceExportStatus(statusIndex, newServiceExportCondition(corev1.ConditionFalse, "AwaitingSync"),
-		newServiceExportCondition(corev1.ConditionTrue, ""))
+	condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionTrue, controller.ReasonEmpty)
+	t.awaitLocalServiceExport(condition)
 
-	return statusIndex + 2
+	brokerExport := t.awaitBrokerServiceExport(nil)
+	Expect(brokerExport.Labels[lhconstants.LighthouseLabelSourceName]).To(Equal(t.service.Name))
+	Expect(brokerExport.Labels[lhconstants.LabelSourceNamespace]).To(Equal(t.service.Namespace))
+	Expect(brokerExport.Labels[lhconstants.LighthouseLabelSourceCluster]).To(Equal(clusterID1))
+	Expect(brokerExport.Annotations[lhconstants.OriginName]).To(Equal(t.service.Name))
+	Expect(brokerExport.Annotations[lhconstants.OriginNamespace]).To(Equal(t.service.Namespace))
 }
 
 func (t *testDriver) awaitHeadlessServiceImport() {
@@ -666,14 +730,8 @@ func (t *testDriver) awaitHeadlessServiceImport() {
 	t.cluster2.awaitServiceImport(t.service, mcsv1a1.Headless, serviceIP)
 }
 
-func (t *testDriver) awaitServiceUnexported() {
-	t.awaitNoServiceImport(t.brokerServiceImportClient)
-	t.awaitNoServiceImport(t.cluster1.localServiceImportClient)
-	t.awaitNoServiceImport(t.cluster2.localServiceImportClient)
-}
-
 func (t *testDriver) awaitHeadlessServiceUnexported() {
-	t.awaitServiceUnexported()
+	t.awaitNoServiceExportOnBroker()
 
 	t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
 	t.awaitNoEndpointSlice(t.brokerEndpointSliceClient)
@@ -689,8 +747,9 @@ func (t *testDriver) awaitHeadlessServiceUnexported() {
 	t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
 }
 
-func (t *testDriver) awaitServiceUnavailableStatus(atIndex int) {
-	t.awaitServiceExportStatus(atIndex, newServiceExportCondition(corev1.ConditionFalse, "ServiceUnavailable"))
+func (t *testDriver) awaitServiceUnavailableStatus() {
+	condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonServiceUnavailable)
+	t.awaitLocalServiceExport(condition)
 }
 
 func (t *testDriver) endpointIPs() []string {
@@ -702,11 +761,12 @@ func (t *testDriver) endpointIPs() []string {
 	return ips
 }
 
-func newServiceExportCondition(status corev1.ConditionStatus, reason string) *mcsv1a1.ServiceExportCondition {
+func newServiceExportCondition(condType mcsv1a1.ServiceExportConditionType, status corev1.ConditionStatus,
+	reason controller.ServiceExportConditionReason) *mcsv1a1.ServiceExportCondition {
 	return &mcsv1a1.ServiceExportCondition{
-		Type:   mcsv1a1.ServiceExportValid,
+		Type:   condType,
 		Status: status,
-		Reason: &reason,
+		Reason: (*string)(&reason),
 	}
 }
 

@@ -48,17 +48,17 @@ var (
 func (a *Controller) Cleanup() error {
 	// Delete all ServiceImports from the local cluster skipping those in the broker namespace if the broker is on the
 	// local cluster.
-	err := a.serviceImportSyncer.GetLocalClient().Resource(serviceImportGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
+	err := a.localClient.Resource(serviceImportGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
 		metav1.DeleteOptions{},
 		metav1.ListOptions{
-			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.serviceImportSyncer.GetBrokerNamespace()).String(),
+			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String(),
 		})
 	if err != nil {
 		return errors.Wrap(err, "error deleting local ServiceImports")
 	}
 
 	// Delete all local ServiceImports from the broker.
-	err = a.serviceImportSyncer.GetBrokerClient().Resource(serviceImportGVR).Namespace(a.serviceImportSyncer.GetBrokerNamespace()).
+	err = a.brokerClient.Resource(serviceImportGVR).Namespace(a.brokerNamespace).
 		DeleteCollection(context.TODO(), metav1.DeleteOptions{},
 			metav1.ListOptions{
 				LabelSelector: labels.Set(map[string]string{lhconstants.LighthouseLabelSourceCluster: a.clusterID}).String(),
@@ -69,10 +69,10 @@ func (a *Controller) Cleanup() error {
 
 	// Delete all EndpointSlices from the local cluster skipping those in the broker namespace if the broker is on the
 	// local cluster.
-	err = a.endpointSliceSyncer.GetLocalClient().Resource(endpointSliceGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
+	err = a.localClient.Resource(endpointSliceGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
 		metav1.DeleteOptions{},
 		metav1.ListOptions{
-			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.serviceImportSyncer.GetBrokerNamespace()).String(),
+			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String(),
 			LabelSelector: labels.Set(map[string]string{discovery.LabelManagedBy: lhconstants.LabelValueManagedBy}).String(),
 		})
 	if err != nil {
@@ -80,7 +80,7 @@ func (a *Controller) Cleanup() error {
 	}
 
 	// Delete all local EndpointSlices from the broker.
-	err = a.endpointSliceSyncer.GetBrokerClient().Resource(endpointSliceGVR).Namespace(a.endpointSliceSyncer.GetBrokerNamespace()).
+	err = a.brokerClient.Resource(endpointSliceGVR).Namespace(a.brokerNamespace).
 		DeleteCollection(context.TODO(), metav1.DeleteOptions{},
 			metav1.ListOptions{
 				LabelSelector: labels.Set(map[string]string{lhconstants.MCSLabelSourceCluster: a.clusterID}).String(),
