@@ -219,7 +219,8 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
 
 	// Start the informer factories to begin populating the informer caches
-	logger.Info("Starting Agent controller")
+	agentLogger := logger.WithValues("ClusterID", a.clusterID)
+	agentLogger.Info("Starting Agent controller")
 
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
@@ -279,7 +280,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// if not - enqueue deletion of the service import, to delete obsolete service imports locally
 	a.serviceImportDownloader.Reconcile(a.localServiceImportLister)
 
-	logger.Info("Agent controller started")
+	agentLogger.Info("Agent controller started")
 
 	return nil
 }

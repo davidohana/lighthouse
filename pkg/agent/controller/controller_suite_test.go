@@ -556,11 +556,11 @@ func (t *testDriver) dynamicEndpointsClient() dynamic.ResourceInterface {
 	return t.cluster1.localDynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "endpoints"}).Namespace(t.service.Namespace)
 }
 
-func (t *testDriver) createServiceExport() {
+func (t *testDriver) createLocalServiceExport() {
 	test.CreateResource(t.cluster1.localServiceExportClient, t.serviceExport)
 }
 
-func (t *testDriver) deleteServiceExport() {
+func (t *testDriver) deleteLocalServiceExport() {
 	Expect(t.cluster1.localServiceExportClient.Delete(context.TODO(), t.service.GetName(), metav1.DeleteOptions{})).To(Succeed())
 }
 

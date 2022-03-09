@@ -29,7 +29,7 @@ package controller_test
 //	JustBeforeEach(func() {
 //		t.justBeforeEach()
 //		t.createService()
-//		t.createServiceExport()
+//		t.createLocalServiceExport()
 //	})
 //
 //	AfterEach(func() {
