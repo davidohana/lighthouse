@@ -73,7 +73,7 @@ package controller_test
 //			t.endpoints.Subsets[0].Addresses = append(t.endpoints.Subsets[0].Addresses, corev1.EndpointAddress{IP: "192.168.5.3"})
 //			t.updateEndpoints()
 //			t.awaitUpdatedServiceImport("")
-//			t.awaitUpdatedEndpointSlice(append(t.endpointIPs(), "10.253.6.1"))
+//			t.awaitUpdatedEndpointSlice(append(t.getEndpointIPs(), "10.253.6.1"))
 //		})
 //	})
 //

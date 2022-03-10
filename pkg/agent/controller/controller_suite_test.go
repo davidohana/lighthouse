@@ -506,18 +506,19 @@ func (c *cluster) awaitEndpointSlice(t *testDriver) *discovery.EndpointSlice {
 	return awaitEndpointSlice(c.endpointSliceClient, t.endpoints, t.service, t.service.Namespace, t.endpointGlobalIPs)
 }
 
-func awaitUpdatedEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints *corev1.Endpoints, expectedIPs []string) {
+func awaitUpdatedEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints *corev1.Endpoints) {
 	name := endpoints.Name + "-" + clusterID1
 
+	expectedIPs := getEndpointIPs(endpoints)
 	sort.Strings(expectedIPs)
 
 	var actualIPs []string
+	endpointSlice := &discovery.EndpointSlice{}
 
 	err := wait.PollImmediate(50*time.Millisecond, 5*time.Second, func() (bool, error) {
 		obj, err := endpointSliceClient.Get(context.TODO(), name, metav1.GetOptions{})
 		Expect(err).To(Succeed())
 
-		endpointSlice := &discovery.EndpointSlice{}
 		Expect(scheme.Scheme.Convert(obj, endpointSlice, nil)).To(Succeed())
 
 		actualIPs = nil
@@ -527,7 +528,11 @@ func awaitUpdatedEndpointSlice(endpointSliceClient dynamic.ResourceInterface, en
 
 		sort.Strings(actualIPs)
 
-		return reflect.DeepEqual(actualIPs, expectedIPs), nil
+		if !reflect.DeepEqual(actualIPs, expectedIPs) {
+			return false, nil
+		}
+
+		return true, nil
 	})
 
 	if errors.Is(err, wait.ErrWaitTimeout) {
@@ -537,8 +542,8 @@ func awaitUpdatedEndpointSlice(endpointSliceClient dynamic.ResourceInterface, en
 	Expect(err).To(Succeed())
 }
 
-func (c *cluster) awaitUpdatedEndpointSlice(endpoints *corev1.Endpoints, expectedIPs []string) {
-	awaitUpdatedEndpointSlice(c.endpointSliceClient, endpoints, expectedIPs)
+func (c *cluster) awaitUpdatedEndpointSlice(endpoints *corev1.Endpoints) {
+	awaitUpdatedEndpointSlice(c.endpointSliceClient, endpoints)
 }
 
 func (c *cluster) dynamicServiceClient() dynamic.NamespaceableResourceInterface {
@@ -565,10 +570,10 @@ func (t *testDriver) awaitEndpointSlice() {
 	t.cluster2.awaitEndpointSlice(t)
 }
 
-func (t *testDriver) awaitUpdatedEndpointSlice(expectedIPs []string) {
-	awaitUpdatedEndpointSlice(t.brokerEndpointSliceClient, t.endpoints, expectedIPs)
-	t.cluster1.awaitUpdatedEndpointSlice(t.endpoints, expectedIPs)
-	t.cluster2.awaitUpdatedEndpointSlice(t.endpoints, expectedIPs)
+func (t *testDriver) awaitUpdatedEndpointSlice() {
+	awaitUpdatedEndpointSlice(t.brokerEndpointSliceClient, t.endpoints)
+	t.cluster1.awaitUpdatedEndpointSlice(t.endpoints)
+	t.cluster2.awaitUpdatedEndpointSlice(t.endpoints)
 }
 
 func (t *testDriver) createService() {
@@ -809,9 +814,13 @@ func (t *testDriver) awaitServiceUnavailableStatus() {
 	t.awaitLocalServiceExport(condition)
 }
 
-func (t *testDriver) endpointIPs() []string {
-	ips := []string{}
-	for _, a := range t.endpoints.Subsets[0].Addresses {
+func getEndpointIPs(endpoints *corev1.Endpoints) []string {
+	var ips []string
+	subset := endpoints.Subsets[0]
+	for _, a := range subset.Addresses {
+		ips = append(ips, a.IP)
+	}
+	for _, a := range subset.NotReadyAddresses {
 		ips = append(ips, a.IP)
 	}
 

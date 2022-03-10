@@ -20,6 +20,7 @@ package controller_test
 import (
 	. "github.com/onsi/ginkgo"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
+	corev1 "k8s.io/api/core/v1"
 )
 
 var _ = Describe("ServiceImport syncing", func() {
@@ -86,6 +87,26 @@ var _ = Describe("ServiceImport syncing", func() {
 
 			t.deleteEndpointsOnCluster1()
 			t.awaitNoEndpointSlice()
+		})
+	})
+
+	When("local endpoints updated while an EndpointSlice exist", func() {
+		It("should update endpoint slice from all clusters", func() {
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
+			t.createEndpointsOnCluster1()
+			t.createBrokerServiceImport()
+			t.awaitServiceImport()
+			t.awaitEndpointSlice()
+
+			t.endpoints.Subsets[0].Addresses[0].IP = "1.2.3.4"
+			t.updateEndpoints()
+			t.awaitUpdatedEndpointSlice()
+
+			t.endpoints.Subsets[0].NotReadyAddresses = append(t.endpoints.Subsets[0].NotReadyAddresses, corev1.EndpointAddress{IP: "7.7.7.7"})
+			t.updateEndpoints()
+			t.awaitUpdatedEndpointSlice()
 		})
 	})
 
