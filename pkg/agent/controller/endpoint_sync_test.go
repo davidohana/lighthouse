@@ -20,11 +20,9 @@ package controller_test
 import (
 	. "github.com/onsi/ginkgo"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
-	corev1 "k8s.io/api/core/v1"
-	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
-var _ = Describe("ServiceImport syncing", func() {
+var _ = FDescribe("Endpoints syncing", func() {
 	var t *testDriver
 
 	BeforeEach(func() {
@@ -37,38 +35,6 @@ var _ = Describe("ServiceImport syncing", func() {
 
 	AfterEach(func() {
 		t.afterEach()
-	})
-
-	When("a ServiceImport is created on broker when local Endpoints exist", func() {
-		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
-			t.awaitNoEndpointSlice()
-			t.awaitNoServiceImport()
-
-			t.createEndpointsOnCluster1()
-			t.createBrokerServiceImport()
-			t.awaitServiceImport()
-			t.awaitEndpointSlice()
-		})
-	})
-
-	When("a headless ServiceImport is created on broker when local Endpoints exist", func() {
-		JustBeforeEach(func() {
-			t.serviceImport.Spec.Type = mcsv1a1.Headless
-		})
-
-		JustAfterEach(func() {
-			t.serviceImport.Spec.Type = mcsv1a1.ClusterSetIP
-		})
-
-		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
-			t.awaitNoEndpointSlice()
-			t.awaitNoServiceImport()
-
-			t.createEndpointsOnCluster1()
-			t.createBrokerServiceImport()
-			t.awaitServiceImport()
-			t.awaitEndpointSlice()
-		})
 	})
 
 	When("a ServiceImport is created on broker when local Endpoints does not exist", func() {
@@ -93,41 +59,6 @@ var _ = Describe("ServiceImport syncing", func() {
 
 			t.createEndpointsOnCluster1()
 			t.awaitEndpointSlice()
-		})
-	})
-
-	When("local endpoints deleted while an EndpointSlice exist", func() {
-		It("should delete endpoint slice from all clusters", func() {
-			t.awaitNoEndpointSlice()
-			t.awaitNoServiceImport()
-
-			t.createEndpointsOnCluster1()
-			t.createBrokerServiceImport()
-			t.awaitServiceImport()
-			t.awaitEndpointSlice()
-
-			t.deleteEndpointsOnCluster1()
-			t.awaitNoEndpointSlice()
-		})
-	})
-
-	When("local endpoints updated while an EndpointSlice exist", func() {
-		It("should update endpoint slice from all clusters", func() {
-			t.awaitNoEndpointSlice()
-			t.awaitNoServiceImport()
-
-			t.createEndpointsOnCluster1()
-			t.createBrokerServiceImport()
-			t.awaitServiceImport()
-			t.awaitEndpointSlice()
-
-			t.endpoints.Subsets[0].Addresses[0].IP = "1.2.3.4"
-			t.updateEndpoints()
-			t.awaitUpdatedEndpointSlice()
-
-			t.endpoints.Subsets[0].NotReadyAddresses = append(t.endpoints.Subsets[0].NotReadyAddresses, corev1.EndpointAddress{IP: "7.7.7.7"})
-			t.updateEndpoints()
-			t.awaitUpdatedEndpointSlice()
 		})
 	})
 
