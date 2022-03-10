@@ -343,7 +343,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 
 	seLog := logger.WithValues("name", localServiceExport.Namespace+"/"+localServiceExport.Name)
 	seLog.V(log.DEBUG).Info(
-		fmt.Sprintf("Transform: Local ServiceExport was %sd", op), "requeue#", numRequeues)
+		fmt.Sprintf("ServiceExport Upload Transform: Local ServiceExport was %sd", op), "requeue#", numRequeues)
 
 	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 	if op == syncer.Delete {
@@ -432,7 +432,7 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numReque
 		return nil, false
 	}
 
-	logger.V(log.DEBUG).Info(fmt.Sprintf("Transform: ServiceExport %s/%s on broker was %sd",
+	logger.V(log.DEBUG).Info(fmt.Sprintf("ServiceExport Download Transform: ServiceExport %s/%s on broker was %sd",
 		brokerServiceExport.Namespace, brokerServiceExport.Name, op), "requeue#", numRequeues)
 
 	conflictCondition := lhutil.GetServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
@@ -519,7 +519,7 @@ func (a *Controller) serviceToRemoteServiceExport(svcObj runtime.Object, numRequ
 
 	svc := svcObj.(*corev1.Service)
 	svcLog := logger.WithValues("service", svc.Name+"/"+svc.Namespace)
-	svcLog.V(log.DEBUG).Info("Transform: Service deleted", "requeue#", numRequeues)
+	svcLog.V(log.DEBUG).Info("Service Transform: Service deleted", "requeue#", numRequeues)
 
 	seObj, found, err := a.serviceExportUploader.GetResource(svc.Name, svc.Namespace)
 	if err != nil {

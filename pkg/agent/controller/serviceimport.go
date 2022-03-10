@@ -148,7 +148,7 @@ func (c *ServiceImportController) serviceImportToEndpointController(obj runtime.
 	serviceImport := obj.(*mcsv1a1.ServiceImport)
 	key, _ := cache.MetaNamespaceKeyFunc(serviceImport)
 
-	logger.V(log.DEBUG).Info(fmt.Sprintf("Transform: ServiceImport %s was %sd", key, op), "requeue#", numRequeues)
+	logger.V(log.DEBUG).Info(fmt.Sprintf("Local ServiceImport Transform: ServiceImport %s was %sd", key, op), "requeue#", numRequeues)
 
 	if op == syncer.Create || op == syncer.Update {
 		return nil, c.serviceImportCreatedOrUpdated(serviceImport, key)
