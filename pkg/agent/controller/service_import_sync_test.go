@@ -104,7 +104,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t = newTestDriver()                                                      // create a new driver - data stores are now empty
 			test.CreateResource(t.cluster1.serviceImportClient, localServiceImport1) // create headless import on cluster1
 			test.CreateResource(t.cluster2.serviceImportClient, localServiceImport2) // create headless import on cluster2
-			test.CreateResource(t.cluster1.endpointSliceClient, localEpSlice1)       // create endpoint slice on cluster2
+			test.CreateResource(t.cluster1.endpointSliceClient, localEpSlice1)       // create endpoint slice on cluster1
 			test.CreateResource(t.cluster2.endpointSliceClient, localEpSlice2)       // create endpoint slice on cluster2
 			t.justBeforeEach()                                                       // start agent controller on all clusters
 			t.awaitNoServiceImport()                                                 // assert that imports are deleted
@@ -121,6 +121,55 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.justBeforeEach()            // start agent controller on all clusters
 			t.awaitServiceImport()        // assert that import is synced to clusters
 			t.awaitEndpointSlice()        // assert that ep slice is created and synced to other clusters
+		})
+	})
+
+	When("local owned ep slice is deleted out of band", func() {
+		It("should delete ep slice from broker and other cluster as well", func() {
+			t.createBrokerServiceImport()
+			t.createEndpointsOnCluster1()
+			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+			brokerEpSlice := t.awaitBrokerEndpointSlice()
+			localEpSlice2 := t.cluster2.awaitEndpointSlice(t)
+
+			t.afterEach()                                                      // stop agent controller on all clusters
+			t = newTestDriver()                                                // create a new driver - data stores are now empty
+			test.CreateResource(t.brokerEndpointSliceClient, brokerEpSlice)    // create endpoint slice on broker oob
+			test.CreateResource(t.cluster2.endpointSliceClient, localEpSlice2) // create endpoint slice on other cluster oob
+			t.justBeforeEach()                                                 // start agent controller on all clusters
+			t.awaitNoEndpointSlice()                                           // ensure sp slice is deleted from all places
+		})
+	})
+
+	When("broker ep slice is deleted out of band", func() {
+		It("should upload it again", func() {
+			t.createBrokerServiceImport()
+			t.createEndpointsOnCluster1()
+			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
+
+			t.afterEach()                                                      // stop agent controller on all clusters
+			t = newTestDriver()                                                // create a new driver - data stores are now empty
+			test.CreateResource(t.cluster1.endpointSliceClient, localEpSlice1) // create endpoint slice on the origin cluster oob
+			t.justBeforeEach()                                                 // start agent controller on all clusters
+			t.awaitEndpointSlice()                                             // ensure sp slice is synced to broker and other cluster
+		})
+	})
+
+	When("broker ep slice is deleted oob + import deleted from local clusters", func() {
+		It("should sync ep slice and import on reconciliation", func() {
+			t.createBrokerServiceImport()
+			t.createEndpointsOnCluster1()
+			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
+
+			t.afterEach()                                                      // stop agent controller on all clusters
+			t = newTestDriver()                                                // create a new driver - data stores are now empty
+			t.createBrokerServiceImport()                                      // create import on broker oob
+			test.CreateResource(t.cluster1.endpointSliceClient, localEpSlice1) // create endpoint slice on cluster1 oob
+			t.justBeforeEach()                                                 // start agent controller on all clusters
+			t.awaitEndpointSlice()                                             // ensure sp slice is synced to other clusters
+			t.awaitServiceImport()                                             // ensure import is synced to clusters
 		})
 	})
 
