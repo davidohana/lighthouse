@@ -338,12 +338,12 @@ func (a *Controller) localServiceImportLister() []runtime.Object {
 	return retList
 }
 
-func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	localServiceExport := serviceExportObj.(*mcsv1a1.ServiceExport)
 
 	seLog := logger.WithValues("name", localServiceExport.Namespace+"/"+localServiceExport.Name)
 	seLog.V(log.DEBUG).Info(
-		fmt.Sprintf("Local ServiceExport %sd", op))
+		fmt.Sprintf("Transform: Local ServiceExport was %sd", op), "requeue#", numRequeues)
 
 	brokerServiceExport := a.newServiceExport(localServiceExport.Name, localServiceExport.Namespace)
 	if op == syncer.Delete {
@@ -368,6 +368,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 		return nil, true
 	}
 
+	seLog.V(log.DEBUG).Info("Local service exist for export")
 	// this is a status update of the local export and service exist.
 	// we want to continue only if the last "Valid" condition of the export is "service unavailable"
 	// which means that service was previously not available and is now available
@@ -418,7 +419,7 @@ func (a *Controller) isRemoteServiceExportOwned(se *mcsv1a1.ServiceExport) bool 
 	return se.GetLabels()[lhconstants.LighthouseLabelSourceCluster] == a.clusterID
 }
 
-func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Update {
 		// we only care about status updates
 		return nil, false
@@ -431,8 +432,8 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, _ int, o
 		return nil, false
 	}
 
-	logger.V(log.DEBUG).Info(fmt.Sprintf("ServiceExport %s/%s on broker %sd",
-		brokerServiceExport.Namespace, brokerServiceExport.Name, op))
+	logger.V(log.DEBUG).Info(fmt.Sprintf("Transform: ServiceExport %s/%s on broker was %sd",
+		brokerServiceExport.Namespace, brokerServiceExport.Name, op), "requeue#", numRequeues)
 
 	conflictCondition := lhutil.GetServiceExportCondition(&brokerServiceExport.Status, mcsv1a1.ServiceExportConflict)
 	if conflictCondition == nil {
@@ -510,7 +511,7 @@ func (a *Controller) serviceSyncerShouldProcessResource(_ *unstructured.Unstruct
 	return op == syncer.Delete
 }
 
-func (a *Controller) serviceToRemoteServiceExport(svcObj runtime.Object, _ int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceToRemoteServiceExport(svcObj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	if op != syncer.Delete {
 		// Ignore create/update
 		return nil, false
@@ -518,7 +519,7 @@ func (a *Controller) serviceToRemoteServiceExport(svcObj runtime.Object, _ int, 
 
 	svc := svcObj.(*corev1.Service)
 	svcLog := logger.WithValues("service", svc.Name+"/"+svc.Namespace)
-	svcLog.V(log.DEBUG).Info("Service deleted")
+	svcLog.V(log.DEBUG).Info("Transform: Service deleted", "requeue#", numRequeues)
 
 	seObj, found, err := a.serviceExportUploader.GetResource(svc.Name, svc.Namespace)
 	if err != nil {
@@ -715,7 +716,7 @@ func (a *Controller) getIngressIP(name, namespace string) (*IngressIP, bool) {
 
 func (a *Controller) handleServiceExportTransformError(err error, svcExport *mcsv1a1.ServiceExport,
 	reason ServiceExportConditionReason, errMessage string) {
-	logger.Error(err, "ServiceExport transform failed: "+errMessage,
+	logger.Error(err, "ServiceExport upload transform failed: "+errMessage,
 		"name", svcExport.Name+"/"+svcExport.Namespace)
 	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
 		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason, errMessage)

@@ -25,10 +25,12 @@ import (
 	"fmt"
 	"github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/log/kzerolog"
+	"github.com/submariner-io/admiral/pkg/resource"
 	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"k8s.io/klog"
 	"math/big"
 	"reflect"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"testing"
 	"time"
@@ -69,6 +71,7 @@ var (
 	hostName = "my-host"
 	ready    = true
 	notReady = false
+	logger   = logf.Log.WithName("agent-tests")
 )
 
 func init() {
@@ -125,6 +128,7 @@ type testDriver struct {
 }
 
 func newTestDriver() *testDriver {
+	logger.Info("Creating test driver")
 	syncerScheme := runtime.NewScheme()
 	Expect(corev1.AddToScheme(syncerScheme)).To(Succeed())
 	Expect(discovery.AddToScheme(syncerScheme)).To(Succeed())
@@ -229,6 +233,7 @@ func newTestDriver() *testDriver {
 	t.cluster1.init(t.syncerConfig)
 	t.cluster2.init(t.syncerConfig)
 
+	logger.Info("Created test driver")
 	return t
 }
 
@@ -259,12 +264,17 @@ func (t *testDriver) newHeadlessGlobalIngressIP(name, ip string) *unstructured.U
 }
 
 func (t *testDriver) justBeforeEach() {
+	logger.Info("Starting agent controllers")
 	t.cluster1.start(t, *t.syncerConfig)
 	t.cluster2.start(t, *t.syncerConfig)
+	logger.Info("Started agent controllers")
 }
 
 func (t *testDriver) afterEach() {
+	logger.Info("Stopping agent controllers")
 	close(t.stopCh)
+	time.Sleep(200 * time.Millisecond) // wait for agents to stop, just to avoid mixing logs between tests
+	logger.Info("Stopped agent controllers")
 }
 
 func (c *cluster) init(syncerConfig *broker.SyncerConfig) {
@@ -781,4 +791,12 @@ func setIngressIPConditions(ingressIP *unstructured.Unstructured, conditions ...
 
 func setIngressAllocatedIP(ingressIP *unstructured.Unstructured, ip string) {
 	Expect(unstructured.SetNestedField(ingressIP.Object, ip, "status", "allocatedIP")).To(Succeed())
+}
+
+func (t *testDriver) addBrokerServiceExportCondition(brokerExport *mcsv1a1.ServiceExport, cond *mcsv1a1.ServiceExportCondition) {
+	brokerExport.Status.Conditions = append(brokerExport.Status.Conditions, *cond)
+	raw, err := resource.ToUnstructured(brokerExport)
+	Expect(err).To(BeNil())
+	_, err = t.brokerServiceExportClient.UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
+	Expect(err).To(BeNil())
 }

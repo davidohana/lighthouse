@@ -18,17 +18,14 @@ limitations under the License.
 package controller_test
 
 import (
-	"context"
 	"errors"
 	. "github.com/onsi/ginkgo"
-	"github.com/submariner-io/admiral/pkg/resource"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
 	"github.com/submariner-io/lighthouse/pkg/agent/controller"
 	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"github.com/submariner-io/lighthouse/pkg/mcs"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 	"time"
@@ -208,39 +205,30 @@ var _ = Describe("ServiceExport syncing", func() {
 
 	When("hub updates service export conflict status", func() {
 		It("only condition of conflict status shall be updated on local export", func() {
+			// sync export to broker
 			t.createService()
 			t.createLocalServiceExport()
 			t.awaitServiceExported()
-
 			brokerExport := t.awaitBrokerServiceExport(nil)
 
-			exportCondition := lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportValid,
+			// create a condition other than conflict - should not be downloaded
+			cond := lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportValid,
 				corev1.ConditionFalse, "other reason", "other message")
-			brokerExport.Status.Conditions = append(brokerExport.Status.Conditions, *exportCondition)
-			raw, err := resource.ToUnstructured(brokerExport)
-			Expect(err).To(BeNil())
-			_, err = t.brokerServiceExportClient.UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
-			Expect(err).To(BeNil())
-			t.awaitNotServiceExportStatus(exportCondition)
+			t.addBrokerServiceExportCondition(brokerExport, cond)
+			t.awaitNotServiceExportStatus(cond)
 			t.awaitServiceExported()
 
-			exportCondition = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
+			// create conflict condition - should be downloaded
+			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
 				corev1.ConditionTrue, "protocol conflict", "export conflict found")
-			brokerExport.Status.Conditions = append(brokerExport.Status.Conditions, *exportCondition)
-			raw, err = resource.ToUnstructured(brokerExport)
-			Expect(err).To(BeNil())
-			_, err = t.brokerServiceExportClient.UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
-			Expect(err).To(BeNil())
-			t.awaitLocalServiceExport(exportCondition)
+			t.addBrokerServiceExportCondition(brokerExport, cond)
+			t.awaitLocalServiceExport(cond)
 
-			exportCondition = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
+			// resolve conflict condition - should be downloaded
+			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
 				corev1.ConditionFalse, "protocol conflict resolved", "export conflict resolved")
-			brokerExport.Status.Conditions = append(brokerExport.Status.Conditions, *exportCondition)
-			raw, err = resource.ToUnstructured(brokerExport)
-			Expect(err).To(BeNil())
-			_, err = t.brokerServiceExportClient.UpdateStatus(context.TODO(), raw, metav1.UpdateOptions{})
-			Expect(err).To(BeNil())
-			t.awaitLocalServiceExport(exportCondition)
+			t.addBrokerServiceExportCondition(brokerExport, cond)
+			t.awaitLocalServiceExport(cond)
 		})
 	})
 
@@ -292,4 +280,30 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.awaitServiceExported()     // ensure export is synced to broker
 		})
 	})
+
+	//When("broker service export is set to conflict status out of band", func() {
+	//	It("should update local export status conflict condition on reconciliation", func() {
+	//		logger.Info("Simulating sync to broker to get the export state as it should be on the broker")
+	//		t.createService()
+	//		t.createLocalServiceExport()
+	//		t.awaitServiceExported()
+	//		brokerExport := t.awaitBrokerServiceExport(nil)
+	//
+	//		logger.Info("Performing oob actions")
+	//		t.afterEach()                                                  // stop agent controller on all clusters
+	//		t = newTestDriver()                                            // create a new driver - data stores are now empty
+	//		t.createLocalServiceExport()                                   // create local export
+	//		t.createService()                                              // create local service
+	//		test.CreateResource(t.brokerServiceExportClient, brokerExport) // create broker export
+	//		cond := lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
+	//			corev1.ConditionTrue, "protocol conflict", "export conflict found")
+	//		t.addBrokerServiceExportCondition(brokerExport, cond) // set conflict condition on broker
+	//		t.awaitBrokerServiceExport(cond)                      // assert that conflict cond still exist on broker export
+	//
+	//		logger.Info("Restarting agent controllers")
+	//		t.justBeforeEach()               // start agent controller on all clusters
+	//		t.awaitBrokerServiceExport(cond) // assert that conflict cond still exist on broker export
+	//		t.awaitLocalServiceExport(cond)  // assert that conflict cond exist on local export
+	//	})
+	//})
 })

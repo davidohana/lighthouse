@@ -134,7 +134,7 @@ func (e *EndpointController) endpointsToEndpointSlice(obj runtime.Object, numReq
 	objLogger := logger.WithValues("name", endPoints.Namespace+"/"+endPoints.Name)
 
 	if op == syncer.Delete {
-		objLogger.V(log.DEBUG).Info("Endpoints deleted")
+		objLogger.V(log.DEBUG).Info("Transform: Endpoints was deleted", "requeue#", numRequeues)
 
 		return &discovery.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
