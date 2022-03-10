@@ -77,6 +77,7 @@ var (
 
 func init() {
 	logLevel := log.DEBUG
+	//logLevel := log.LIBTRACE
 	args := []string{fmt.Sprintf("-v=%d", logLevel)}
 	// set logging verbosity of agent in unit test to DEBUG
 	flags := flag.NewFlagSet("kzerolog", flag.ExitOnError)
@@ -582,6 +583,14 @@ func (t *testDriver) createEndpointsOnCluster1() {
 	Expect(err).To(Succeed())
 
 	test.CreateResource(t.dynamicEndpointsClient(), t.endpoints)
+}
+
+func (t *testDriver) deleteEndpointsOnCluster1() {
+	err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
+	Expect(err).To(Succeed())
+
+	err = t.dynamicEndpointsClient().Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
+	Expect(err).To(Succeed())
 }
 
 func (t *testDriver) updateEndpoints() {

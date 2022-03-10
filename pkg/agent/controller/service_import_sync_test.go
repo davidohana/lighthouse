@@ -74,6 +74,21 @@ var _ = Describe("ServiceImport syncing", func() {
 		})
 	})
 
+	When("local endpoints deleted while an EndpointSlice exist", func() {
+		It("should delete endpoint slice from all clusters", func() {
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
+			t.createEndpointsOnCluster1()
+			t.createBrokerServiceImport()
+			t.awaitServiceImport()
+			t.awaitEndpointSlice()
+
+			t.deleteEndpointsOnCluster1()
+			t.awaitNoEndpointSlice()
+		})
+	})
+
 	When("a ServiceImport is deleted on the broker", func() {
 		It("should delete the local import and EndpointSlice and sync to broker and other cluster", func() {
 			t.awaitNoEndpointSlice()

@@ -73,7 +73,7 @@ func startEndpointController(localClient dynamic.Interface, restMapper meta.REST
 		RestMapper:          restMapper,
 		Federator:           broker.NewFederator(localClient, restMapper, serviceImportNameSpace, "", "ownerReferences"),
 		ResourceType:        &corev1.Endpoints{},
-		Transform:           controller.endpointsToEndpointSlice,
+		Transform:           controller.endpointsToEndpointSliceTransform,
 		Scheme:              scheme,
 	})
 	if err != nil {
@@ -127,7 +127,7 @@ func (e *EndpointController) cleanup() {
 	}
 }
 
-func (e *EndpointController) endpointsToEndpointSlice(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (e *EndpointController) endpointsToEndpointSliceTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	endPoints := obj.(*corev1.Endpoints)
 
 	endpointSliceName := endPoints.Name + "-" + e.clusterID
