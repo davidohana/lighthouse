@@ -36,8 +36,8 @@ var _ = FDescribe("ServiceImport syncing", func() {
 		t.afterEach()
 	})
 
-	When("a ServiceImport is created on broker", func() {
-		It("should download the ServiceImport", func() {
+	When("a ServiceImport is created on broker when local Endpoints exist", func() {
+		It("should download the ServiceImport, create EndpointSlice and sync to broker and other cluster", func() {
 			t.createEndpoints()
 			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
 			t.awaitNoServiceImport(t.brokerServiceImportClient)
@@ -46,4 +46,27 @@ var _ = FDescribe("ServiceImport syncing", func() {
 			t.awaitEndpointSlice()
 		})
 	})
+
+	When("a ServiceImport is created on broker when local Endpoints does not exist", func() {
+		It("should download the ServiceImport", func() {
+			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+			t.awaitNoServiceImport(t.brokerServiceImportClient)
+			t.createBrokerServiceImport()
+			t.awaitLocalServiceImport()
+			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+		})
+	})
+
+	When("local endpoints created when local import already exist", func() {
+		It("should create EndpointSlice and sync to broker and other cluster", func() {
+			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+			t.awaitNoServiceImport(t.brokerServiceImportClient)
+			t.createBrokerServiceImport()
+			t.awaitLocalServiceImport()
+			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+			t.createEndpoints()
+			t.awaitEndpointSlice()
+		})
+	})
+
 })

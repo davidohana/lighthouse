@@ -19,6 +19,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/log"
@@ -133,21 +134,15 @@ func (e *EndpointController) endpointsToEndpointSlice(obj runtime.Object, numReq
 
 	objLogger := logger.WithValues("name", endPoints.Namespace+"/"+endPoints.Name)
 
-	if op == syncer.Delete {
-		objLogger.V(log.DEBUG).Info("Endpoints Transform: Endpoints was deleted", "requeue#", numRequeues)
+	objLogger.V(log.DEBUG).Info(fmt.Sprintf("Endpoints Transform: Endpoints was %sd", op), "requeue#", numRequeues)
 
+	if op == syncer.Delete {
 		return &discovery.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      endpointSliceName,
 				Namespace: endPoints.Namespace,
 			},
 		}, false
-	}
-
-	if op == syncer.Create {
-		objLogger.V(log.DEBUG).Info("Endpoints created")
-	} else {
-		objLogger.V(log.TRACE).Info("Endpoints updated")
 	}
 
 	return e.endpointSliceFromEndpoints(endPoints, op)
@@ -197,11 +192,7 @@ func (e *EndpointController) endpointSliceFromEndpoints(endpoints *corev1.Endpoi
 		endpointSlice.Endpoints = append(endpointSlice.Endpoints, newEndpoints...)
 	}
 
-	logLevel := log.TRACE
-	if op == syncer.Create {
-		logLevel = log.DEBUG
-	}
-	logger.V(logLevel).Info("Returning EndpointSlice:\n" + PrettyPrint(endpointSlice))
+	logger.V(log.TRACE).Info("Returning EndpointSlice:\n" + PrettyPrint(endpointSlice))
 
 	return endpointSlice, false
 }
