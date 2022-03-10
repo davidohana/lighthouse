@@ -22,7 +22,7 @@ import (
 	"github.com/submariner-io/admiral/pkg/syncer/test"
 )
 
-var _ = FDescribe("ServiceImport syncing", func() {
+var _ = Describe("ServiceImport syncing", func() {
 	var t *testDriver
 
 	BeforeEach(func() {
@@ -90,7 +90,7 @@ var _ = FDescribe("ServiceImport syncing", func() {
 		})
 	})
 
-	FWhen("broker service import is deleted out of band after sync", func() {
+	When("broker service import is deleted out of band after sync", func() {
 		It("should delete it from the clusters datastore on reconciliation", func() {
 			// simulate sync of import from broker to client to get expected local service import state
 			t.createBrokerServiceImport()
@@ -103,6 +103,18 @@ var _ = FDescribe("ServiceImport syncing", func() {
 			test.CreateResource(t.cluster2.serviceImportClient, localServiceImport2) // create headless import on cluster2
 			t.justBeforeEach()                                                       // start agent controller on all clusters
 			t.awaitNoServiceImport()                                                 // assert that imports are deleted
+		})
+	})
+
+	FWhen("broker service import is created out of band", func() {
+		It("should sync it to the clusters datastore on reconciliation", func() {
+			t.afterEach()                 // stop agent controller on all clusters
+			t = newTestDriver()           // create a new driver - data stores are now empty
+			t.createBrokerServiceImport() // create import on broker oob
+			t.createEndpoints()           // create endpoints on origin cluster
+			t.justBeforeEach()            // start agent controller on all clusters
+			t.awaitServiceImport()        // assert that import is synced to clusters
+			t.awaitEndpointSlice()        // assert that ep slice is created and synced to other clusters
 		})
 	})
 
