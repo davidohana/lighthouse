@@ -76,7 +76,7 @@ package controller_test
 //					t.awaitServiceExportStatus(0, newServiceExportCondition(corev1.ConditionFalse, "ServiceGlobalIPUnavailable"))
 //
 //					setIngressAllocatedIP(ingressIP, globalIP1)
-//					test.UpdateResource(t.cluster1.localIngressIPClient, ingressIP)
+//					test.UpdateResource(t.cluster1.ingressIPClient, ingressIP)
 //					t.awaitServiceExported(globalIP1, 1)
 //				})
 //			})
@@ -127,7 +127,7 @@ package controller_test
 //		Context("and it initially does not have a global IP for all endpoint addresses", func() {
 //			It("should eventually sync a ServiceImport and EndpointSlice with the global IPs", func() {
 //				time.Sleep(time.Millisecond * 300)
-//				t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
+//				t.awaitNoEndpointSliceOnClient(t.cluster1.endpointSliceClient)
 //
 //				t.createEndpointIngressIPs()
 //

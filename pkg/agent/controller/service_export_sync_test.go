@@ -193,7 +193,7 @@ var _ = Describe("ServiceExport syncing", func() {
 	When("a conflict initially occurs when updating the ServiceExport status", func() {
 		BeforeEach(func() {
 			err := apierrors.NewConflict(schema.GroupResource{}, t.serviceExport.Name, errors.New("fake conflict"))
-			t.cluster1.localServiceExportClient.FailOnUpdate = err
+			t.cluster1.serviceExportClient.FailOnUpdate = err
 		})
 
 		It("should eventually update the ServiceExport status", func() {

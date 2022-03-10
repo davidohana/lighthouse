@@ -62,10 +62,10 @@ package controller_test
 //			},
 //		}
 //
-//		test.CreateResource(t.cluster1.localServiceImportClient, existingLocalServiceImport)
+//		test.CreateResource(t.cluster1.serviceImportClient, existingLocalServiceImport)
 //		test.CreateResource(t.brokerServiceImportClient, test.SetClusterIDLabel(existingLocalServiceImport, clusterID1))
 //
-//		remoteNSServiceImportClient = t.cluster1.localDynClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
+//		remoteNSServiceImportClient = t.cluster1.dynClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
 //			&mcsv1a1.ServiceImport{})).Namespace(test.RemoteNamespace)
 //
 //		existingLocalServiceImportInRemoteNS = &mcsv1a1.ServiceImport{
@@ -88,7 +88,7 @@ package controller_test
 //			},
 //		}
 //
-//		test.CreateResource(t.cluster1.localServiceImportClient, test.SetClusterIDLabel(existingRemoteServiceImport, clusterID2))
+//		test.CreateResource(t.cluster1.serviceImportClient, test.SetClusterIDLabel(existingRemoteServiceImport, clusterID2))
 //		test.CreateResource(t.brokerServiceImportClient, test.SetClusterIDLabel(existingRemoteServiceImport, clusterID2))
 //
 //		existingLocalEndpointSlice = &discovery.EndpointSlice{
@@ -101,10 +101,10 @@ package controller_test
 //			},
 //		}
 //
-//		test.CreateResource(t.cluster1.localEndpointSliceClient, existingLocalEndpointSlice)
+//		test.CreateResource(t.cluster1.endpointSliceClient, existingLocalEndpointSlice)
 //		test.CreateResource(t.brokerEndpointSliceClient, test.SetClusterIDLabel(existingLocalEndpointSlice, clusterID1))
 //
-//		remoteNSEndpointSliceClient = t.cluster1.localDynClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
+//		remoteNSEndpointSliceClient = t.cluster1.dynClient.Resource(*test.GetGroupVersionResourceFor(t.syncerConfig.RestMapper,
 //			&discovery.EndpointSlice{})).Namespace(test.RemoteNamespace)
 //
 //		existingLocalEndpointSliceInRemoteNS = &discovery.EndpointSlice{
@@ -129,7 +129,7 @@ package controller_test
 //			},
 //		}
 //
-//		test.CreateResource(t.cluster1.localEndpointSliceClient, test.SetClusterIDLabel(existingRemoteEndpointSlice, clusterID2))
+//		test.CreateResource(t.cluster1.endpointSliceClient, test.SetClusterIDLabel(existingRemoteEndpointSlice, clusterID2))
 //		test.CreateResource(t.brokerEndpointSliceClient, test.SetClusterIDLabel(existingRemoteEndpointSlice, clusterID2))
 //
 //		nonLHEndpointSlice = &discovery.EndpointSlice{
@@ -138,7 +138,7 @@ package controller_test
 //			},
 //		}
 //
-//		test.CreateResource(t.cluster1.localEndpointSliceClient, nonLHEndpointSlice)
+//		test.CreateResource(t.cluster1.endpointSliceClient, nonLHEndpointSlice)
 //	})
 //
 //	AfterEach(func() {
@@ -159,13 +159,13 @@ package controller_test
 //	It("should remove all LH ServiceImports and EndpointSlices from the local datastore", func() {
 //		Expect(t.cluster1.agentController.Cleanup()).To(Succeed())
 //
-//		test.AwaitNoResource(t.cluster1.localServiceImportClient, existingLocalServiceImport.GetName())
-//		test.AwaitNoResource(t.cluster1.localServiceImportClient, existingRemoteServiceImport.GetName())
-//		test.AwaitNoResource(t.cluster1.localEndpointSliceClient, existingLocalEndpointSlice.GetName())
-//		test.AwaitNoResource(t.cluster1.localEndpointSliceClient, existingRemoteEndpointSlice.GetName())
+//		test.AwaitNoResource(t.cluster1.serviceImportClient, existingLocalServiceImport.GetName())
+//		test.AwaitNoResource(t.cluster1.serviceImportClient, existingRemoteServiceImport.GetName())
+//		test.AwaitNoResource(t.cluster1.endpointSliceClient, existingLocalEndpointSlice.GetName())
+//		test.AwaitNoResource(t.cluster1.endpointSliceClient, existingRemoteEndpointSlice.GetName())
 //
 //		time.Sleep(300 * time.Millisecond)
-//		test.AwaitResource(t.cluster1.localEndpointSliceClient, nonLHEndpointSlice.GetName())
+//		test.AwaitResource(t.cluster1.endpointSliceClient, nonLHEndpointSlice.GetName())
 //		test.AwaitResource(remoteNSServiceImportClient, existingLocalServiceImportInRemoteNS.GetName())
 //		test.AwaitResource(remoteNSEndpointSliceClient, existingLocalEndpointSliceInRemoteNS.GetName())
 //	})

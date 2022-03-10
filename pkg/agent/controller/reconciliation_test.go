@@ -57,13 +57,13 @@ package controller_test
 //			t.afterEach()
 //			t = newTestDiver()
 //
-//			test.CreateResource(t.cluster1.localServiceImportClient, serviceImport)
-//			test.CreateResource(t.cluster1.localEndpointSliceClient, endpointSlice)
+//			test.CreateResource(t.cluster1.serviceImportClient, serviceImport)
+//			test.CreateResource(t.cluster1.endpointSliceClient, endpointSlice)
 //			t.createService()
 //			t.cluster1.start(t, *t.syncerConfig)
 //
 //			t.awaitServiceUnexported()
-//			t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster1.endpointSliceClient)
 //		})
 //	})
 //
@@ -74,7 +74,7 @@ package controller_test
 //			t.afterEach()
 //			t = newTestDiver()
 //
-//			test.CreateResource(t.cluster1.localServiceImportClient, serviceImport)
+//			test.CreateResource(t.cluster1.serviceImportClient, serviceImport)
 //			t.createServiceExport()
 //			t.cluster1.start(t, *t.syncerConfig)
 //
@@ -103,7 +103,7 @@ package controller_test
 //			t.afterEach()
 //			t = newTestDiver()
 //
-//			test.CreateResource(t.cluster2.localServiceImportClient, serviceImport)
+//			test.CreateResource(t.cluster2.serviceImportClient, serviceImport)
 //			t.cluster2.start(t, *t.syncerConfig)
 //
 //			t.awaitServiceUnexported()
@@ -129,7 +129,7 @@ package controller_test
 //			t.justBeforeEach()
 //
 //			t.awaitNoEndpointSliceOnClient(t.brokerEndpointSliceClient)
-//			t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster2.endpointSliceClient)
 //		})
 //	})
 //
@@ -148,10 +148,10 @@ package controller_test
 //			t.afterEach()
 //			t = newTestDiver()
 //
-//			test.CreateResource(t.cluster2.localEndpointSliceClient, endpointSlice)
+//			test.CreateResource(t.cluster2.endpointSliceClient, endpointSlice)
 //			t.cluster2.start(t, *t.syncerConfig)
 //
-//			t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster2.endpointSliceClient)
 //		})
 //	})
 //})

@@ -19,6 +19,7 @@ package controller_test
 
 import (
 	. "github.com/onsi/ginkgo"
+	"github.com/submariner-io/admiral/pkg/syncer/test"
 )
 
 var _ = FDescribe("ServiceImport syncing", func() {
@@ -86,6 +87,22 @@ var _ = FDescribe("ServiceImport syncing", func() {
 			t.deleteBrokerServiceImport()
 			t.awaitNoServiceImport()
 			t.awaitNoEndpointSlice()
+		})
+	})
+
+	FWhen("broker service import is deleted out of band after sync", func() {
+		It("should delete it from the clusters datastore on reconciliation", func() {
+			// simulate sync of import from broker to client to get expected local service import state
+			t.createBrokerServiceImport()
+			localServiceImport1 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+			localServiceImport2 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+
+			t.afterEach()                                                            // stop agent controller on all clusters
+			t = newTestDriver()                                                      // create a new driver - data stores are now empty
+			test.CreateResource(t.cluster1.serviceImportClient, localServiceImport1) // create headless import on cluster1
+			test.CreateResource(t.cluster2.serviceImportClient, localServiceImport2) // create headless import on cluster2
+			t.justBeforeEach()                                                       // start agent controller on all clusters
+			t.awaitNoServiceImport()                                                 // assert that imports are deleted
 		})
 	})
 
