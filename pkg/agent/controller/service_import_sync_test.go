@@ -37,35 +37,55 @@ var _ = FDescribe("ServiceImport syncing", func() {
 	})
 
 	When("a ServiceImport is created on broker when local Endpoints exist", func() {
-		It("should download the ServiceImport, create EndpointSlice and sync to broker and other cluster", func() {
+		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
 			t.createEndpoints()
-			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
-			t.awaitNoServiceImport(t.brokerServiceImportClient)
 			t.createBrokerServiceImport()
-			t.awaitLocalServiceImport()
+			t.awaitServiceImport()
 			t.awaitEndpointSlice()
 		})
 	})
 
 	When("a ServiceImport is created on broker when local Endpoints does not exist", func() {
-		It("should download the ServiceImport", func() {
-			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
-			t.awaitNoServiceImport(t.brokerServiceImportClient)
+		It("should download the ServiceImport to all clusters", func() {
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
 			t.createBrokerServiceImport()
-			t.awaitLocalServiceImport()
-			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+			t.awaitServiceImport()
+			t.awaitNoEndpointSlice()
 		})
 	})
 
 	When("local endpoints created when local import already exist", func() {
 		It("should create EndpointSlice and sync to broker and other cluster", func() {
-			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
-			t.awaitNoServiceImport(t.brokerServiceImportClient)
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
 			t.createBrokerServiceImport()
-			t.awaitLocalServiceImport()
-			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+			t.awaitServiceImport()
+			t.awaitNoEndpointSlice()
+
 			t.createEndpoints()
 			t.awaitEndpointSlice()
+		})
+	})
+
+	When("a ServiceImport is deleted on the broker", func() {
+		It("should delete the local import and EndpointSlice and sync to broker and other cluster", func() {
+			t.awaitNoEndpointSlice()
+			t.awaitNoServiceImport()
+
+			t.createEndpoints()
+			t.createBrokerServiceImport()
+			t.awaitServiceImport()
+			t.awaitEndpointSlice()
+
+			t.deleteBrokerServiceImport()
+			t.awaitNoServiceImport()
+			t.awaitNoEndpointSlice()
 		})
 	})
 

@@ -51,7 +51,7 @@ package controller_test
 //		})
 //
 //		It("should delete the ServiceImport and EndpointSlice on reconciliation", func() {
-//			serviceImport := t.cluster1.awaitServiceImport(t.service, mcsv1a1.Headless, "")
+//			serviceImport := t.cluster1.awaitServiceImportOnClient(t.service, mcsv1a1.Headless, "")
 //			endpointSlice := t.cluster1.awaitEndpointSlice(t)
 //
 //			t.afterEach()
@@ -63,13 +63,13 @@ package controller_test
 //			t.cluster1.start(t, *t.syncerConfig)
 //
 //			t.awaitServiceUnexported()
-//			t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
 //		})
 //	})
 //
 //	When("a local ServiceImport is stale on startup due to a missed Service delete event", func() {
 //		It("should delete the ServiceImport on reconciliation", func() {
-//			serviceImport := t.cluster1.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, t.service.Spec.ClusterIP)
+//			serviceImport := t.cluster1.awaitServiceImportOnClient(t.service, mcsv1a1.ClusterSetIP, t.service.Spec.ClusterIP)
 //
 //			t.afterEach()
 //			t = newTestDiver()
@@ -98,7 +98,7 @@ package controller_test
 //
 //	When("a synced remote ServiceImport is stale in the local datastore on startup", func() {
 //		It("should delete it from the local datastore on reconciliation", func() {
-//			serviceImport := t.cluster2.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, t.service.Spec.ClusterIP)
+//			serviceImport := t.cluster2.awaitServiceImportOnClient(t.service, mcsv1a1.ClusterSetIP, t.service.Spec.ClusterIP)
 //
 //			t.afterEach()
 //			t = newTestDiver()
@@ -128,8 +128,8 @@ package controller_test
 //			test.CreateResource(t.brokerEndpointSliceClient, endpointSlice)
 //			t.justBeforeEach()
 //
-//			t.awaitNoEndpointSlice(t.brokerEndpointSliceClient)
-//			t.awaitNoEndpointSlice(t.cluster2.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.brokerEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
 //		})
 //	})
 //
@@ -151,7 +151,7 @@ package controller_test
 //			test.CreateResource(t.cluster2.localEndpointSliceClient, endpointSlice)
 //			t.cluster2.start(t, *t.syncerConfig)
 //
-//			t.awaitNoEndpointSlice(t.cluster2.localEndpointSliceClient)
+//			t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
 //		})
 //	})
 //})

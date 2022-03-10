@@ -370,45 +370,45 @@ func (c *cluster) start(t *testDriver, syncerConfig broker.SyncerConfig) {
 	}
 }
 
-func awaitServiceImport(client dynamic.ResourceInterface, service *corev1.Service, sType mcsv1a1.ServiceImportType,
-	serviceIP string) *mcsv1a1.ServiceImport {
-	obj := test.AwaitResource(client, service.Name+"-"+service.Namespace+"-"+clusterID1)
+//func awaitServiceImport(client dynamic.ResourceInterface, service *corev1.Service, sType mcsv1a1.ServiceImportType,
+//	serviceIP string) *mcsv1a1.ServiceImport {
+//	obj := test.AwaitResource(client, service.Name+"-"+service.Namespace+"-"+clusterID1)
+//
+//	serviceImport := &mcsv1a1.ServiceImport{}
+//	Expect(scheme.Scheme.Convert(obj, serviceImport, nil)).To(Succeed())
+//
+//	Expect(serviceImport.GetAnnotations()["origin-name"]).To(Equal(service.Name))
+//	Expect(serviceImport.GetAnnotations()["origin-namespace"]).To(Equal(service.Namespace))
+//	Expect(serviceImport.Spec.Type).To(Equal(sType))
+//
+//	Expect(serviceImport.Status.Clusters).To(HaveLen(1))
+//	Expect(serviceImport.Status.Clusters[0].Cluster).To(Equal(clusterID1))
+//
+//	if serviceIP == "" {
+//		Expect(len(serviceImport.Spec.IPs)).To(Equal(0))
+//	} else {
+//		Expect(serviceImport.Spec.IPs).To(Equal([]string{serviceIP}))
+//	}
+//
+//	Expect(serviceImport.Spec.Ports).To(HaveLen(len(service.Spec.Ports)))
+//
+//	for i := range service.Spec.Ports {
+//		Expect(serviceImport.Spec.Ports[i].Name).To(Equal(service.Spec.Ports[i].Name))
+//		Expect(serviceImport.Spec.Ports[i].Protocol).To(Equal(service.Spec.Ports[i].Protocol))
+//		Expect(serviceImport.Spec.Ports[i].Port).To(Equal(service.Spec.Ports[i].Port))
+//	}
+//
+//	labels := serviceImport.GetObjectMeta().GetLabels()
+//	Expect(labels[lhconstants.LabelSourceNamespace]).To(Equal(service.GetNamespace()))
+//	Expect(labels[lhconstants.LighthouseLabelSourceName]).To(Equal(service.GetName()))
+//	Expect(labels[lhconstants.LighthouseLabelSourceCluster]).To(Equal(clusterID1))
+//
+//	return serviceImport
+//}
 
-	serviceImport := &mcsv1a1.ServiceImport{}
-	Expect(scheme.Scheme.Convert(obj, serviceImport, nil)).To(Succeed())
-
-	Expect(serviceImport.GetAnnotations()["origin-name"]).To(Equal(service.Name))
-	Expect(serviceImport.GetAnnotations()["origin-namespace"]).To(Equal(service.Namespace))
-	Expect(serviceImport.Spec.Type).To(Equal(sType))
-
-	Expect(serviceImport.Status.Clusters).To(HaveLen(1))
-	Expect(serviceImport.Status.Clusters[0].Cluster).To(Equal(clusterID1))
-
-	if serviceIP == "" {
-		Expect(len(serviceImport.Spec.IPs)).To(Equal(0))
-	} else {
-		Expect(serviceImport.Spec.IPs).To(Equal([]string{serviceIP}))
-	}
-
-	Expect(serviceImport.Spec.Ports).To(HaveLen(len(service.Spec.Ports)))
-
-	for i := range service.Spec.Ports {
-		Expect(serviceImport.Spec.Ports[i].Name).To(Equal(service.Spec.Ports[i].Name))
-		Expect(serviceImport.Spec.Ports[i].Protocol).To(Equal(service.Spec.Ports[i].Protocol))
-		Expect(serviceImport.Spec.Ports[i].Port).To(Equal(service.Spec.Ports[i].Port))
-	}
-
-	labels := serviceImport.GetObjectMeta().GetLabels()
-	Expect(labels[lhconstants.LabelSourceNamespace]).To(Equal(service.GetNamespace()))
-	Expect(labels[lhconstants.LighthouseLabelSourceName]).To(Equal(service.GetName()))
-	Expect(labels[lhconstants.LighthouseLabelSourceCluster]).To(Equal(clusterID1))
-
-	return serviceImport
-}
-
-func (c *cluster) awaitServiceImport(service *corev1.Service, sType mcsv1a1.ServiceImportType, serviceIP string) *mcsv1a1.ServiceImport {
-	return awaitServiceImport(c.localServiceImportClient, service, sType, serviceIP)
-}
+//func (c *cluster) awaitServiceImport(service *corev1.Service, sType mcsv1a1.ServiceImportType, serviceIP string) *mcsv1a1.ServiceImport {
+//	return awaitServiceImport(c.localServiceImportClient, service, sType, serviceIP)
+//}
 
 func awaitUpdatedServiceImport(client dynamic.ResourceInterface, service *corev1.Service, serviceIP string) {
 	name := service.Name + "-" + service.Namespace + "-" + clusterID1
@@ -544,9 +544,9 @@ func (c *cluster) dynamicServiceClient() dynamic.NamespaceableResourceInterface 
 	return c.localDynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "services"})
 }
 
-func (t *testDriver) awaitBrokerServiceImport(sType mcsv1a1.ServiceImportType, serviceIP string) *mcsv1a1.ServiceImport {
-	return awaitServiceImport(t.brokerServiceImportClient, t.service, sType, serviceIP)
-}
+//func (t *testDriver) awaitBrokerServiceImport(sType mcsv1a1.ServiceImportType, serviceIP string) *mcsv1a1.ServiceImport {
+//	return awaitServiceImport(t.brokerServiceImportClient, t.service, sType, serviceIP)
+//}
 
 func (t *testDriver) awaitBrokerEndpointSlice() *discovery.EndpointSlice {
 	return awaitEndpointSlice(t.brokerEndpointSliceClient, t.endpoints, t.service, test.RemoteNamespace, t.endpointGlobalIPs)
@@ -627,11 +627,23 @@ func (t *testDriver) awaitNoServiceExportOnBroker() {
 	test.AwaitNoResource(t.brokerServiceExportClient, brokerServiceName)
 }
 
-func (t *testDriver) awaitNoServiceImport(client dynamic.ResourceInterface) {
+func (t *testDriver) awaitNoServiceImport() {
+	t.awaitNoServiceImportOnClient(t.cluster1.localServiceImportClient)
+	t.awaitNoServiceImportOnClient(t.cluster2.localServiceImportClient)
+	t.awaitNoServiceImportOnClient(t.brokerServiceImportClient)
+}
+
+func (t *testDriver) awaitNoServiceImportOnClient(client dynamic.ResourceInterface) {
 	test.AwaitNoResource(client, t.getServiceNameCluster1())
 }
 
-func (t *testDriver) awaitNoEndpointSlice(client dynamic.ResourceInterface) {
+func (t *testDriver) awaitNoEndpointSlice() {
+	t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.brokerEndpointSliceClient)
+}
+
+func (t *testDriver) awaitNoEndpointSliceOnClient(client dynamic.ResourceInterface) {
 	test.AwaitNoResource(client, t.endpoints.Name+"-"+clusterID1)
 }
 
@@ -748,10 +760,6 @@ func (t *testDriver) awaitNotServiceExportStatus(notCond *mcsv1a1.ServiceExportC
 }
 
 func (t *testDriver) awaitServiceExported() {
-	//t.cluster1.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
-	//t.awaitBrokerServiceImport(mcsv1a1.ClusterSetIP, serviceIP)
-	//t.cluster2.awaitServiceImport(t.service, mcsv1a1.ClusterSetIP, serviceIP)
-
 	condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionTrue, controller.ReasonEmpty)
 	t.awaitLocalServiceExport(condition)
 
@@ -763,19 +771,19 @@ func (t *testDriver) awaitServiceExported() {
 	Expect(brokerExport.Annotations[lhconstants.OriginNamespace]).To(Equal(t.service.Namespace))
 }
 
-func (t *testDriver) awaitHeadlessServiceImport() {
-	serviceIP := ""
-	t.awaitBrokerServiceImport(mcsv1a1.Headless, serviceIP)
-	t.cluster1.awaitServiceImport(t.service, mcsv1a1.Headless, serviceIP)
-	t.cluster2.awaitServiceImport(t.service, mcsv1a1.Headless, serviceIP)
-}
+//func (t *testDriver) awaitHeadlessServiceImport() {
+//	serviceIP := ""
+//	t.awaitBrokerServiceImport(mcsv1a1.Headless, serviceIP)
+//	t.cluster1.awaitServiceImport(t.service, mcsv1a1.Headless, serviceIP)
+//	t.cluster2.awaitServiceImport(t.service, mcsv1a1.Headless, serviceIP)
+//}
 
 func (t *testDriver) awaitHeadlessServiceUnexported() {
 	t.awaitNoServiceExportOnBroker()
 
-	t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
-	t.awaitNoEndpointSlice(t.brokerEndpointSliceClient)
-	t.awaitNoEndpointSlice(t.cluster2.localEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.brokerEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.cluster2.localEndpointSliceClient)
 
 	// Ensure the service's Endpoints are no longer being watched by updating the Endpoints and verifyjng the
 	// EndpointSlice isn't recreated.
@@ -784,7 +792,7 @@ func (t *testDriver) awaitHeadlessServiceUnexported() {
 	Expect(err).To(Succeed())
 
 	time.Sleep(200 * time.Millisecond)
-	t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+	t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
 }
 
 func (t *testDriver) awaitServiceUnavailableStatus() {
@@ -834,8 +842,14 @@ func (t *testDriver) createBrokerServiceImport() {
 	test.CreateResource(t.brokerServiceImportClient, t.serviceImport)
 }
 
-func (t *testDriver) awaitLocalServiceImport() *mcsv1a1.ServiceImport {
-	obj := test.AwaitResource(t.cluster1.localServiceImportClient, t.getServiceNameCluster1())
+func (t *testDriver) awaitServiceImport() {
+	t.awaitServiceImportOnClient(t.cluster1.localServiceImportClient)
+	t.awaitServiceImportOnClient(t.cluster2.localServiceImportClient)
+	t.awaitServiceImportOnClient(t.brokerServiceImportClient)
+}
+
+func (t *testDriver) awaitServiceImportOnClient(client dynamic.ResourceInterface) *mcsv1a1.ServiceImport {
+	obj := test.AwaitResource(client, t.getServiceNameCluster1())
 
 	serviceImport := &mcsv1a1.ServiceImport{}
 	Expect(scheme.Scheme.Convert(obj, serviceImport, nil)).To(Succeed())
@@ -846,30 +860,13 @@ func (t *testDriver) awaitLocalServiceImport() *mcsv1a1.ServiceImport {
 	Expect(serviceImport.Annotations[lhconstants.OriginName]).To(Equal(t.service.Name))
 	Expect(serviceImport.Annotations[lhconstants.OriginNamespace]).To(Equal(t.service.Namespace))
 
-	Expect(serviceImport.Spec.Type).To(Equal(mcsv1a1.ClusterSetIP))
-	Expect(serviceImport.Status.Clusters).To(HaveLen(1))
-	Expect(serviceImport.Status.Clusters[0].Cluster).To(Equal(clusterID1))
-	//
-	//if serviceIP == "" {
-	//	Expect(len(serviceImport.Spec.IPs)).To(Equal(0))
-	//} else {
-	//	Expect(serviceImport.Spec.IPs).To(Equal([]string{serviceIP}))
-	//}
-	//
-	//Expect(serviceImport.Spec.Ports).To(HaveLen(len(service.Spec.Ports)))
-	//
-	//for i := range service.Spec.Ports {
-	//	Expect(serviceImport.Spec.Ports[i].Name).To(Equal(service.Spec.Ports[i].Name))
-	//	Expect(serviceImport.Spec.Ports[i].Protocol).To(Equal(service.Spec.Ports[i].Protocol))
-	//	Expect(serviceImport.Spec.Ports[i].Port).To(Equal(service.Spec.Ports[i].Port))
-	//}
-	//
-	//labels := serviceImport.GetObjectMeta().GetLabels()
-	//Expect(labels[lhconstants.LabelSourceNamespace]).To(Equal(service.GetNamespace()))
-	//Expect(labels[lhconstants.LighthouseLabelSourceName]).To(Equal(service.GetName()))
-	//Expect(labels[lhconstants.LighthouseLabelSourceCluster]).To(Equal(clusterID1))
-	//
+	Expect(reflect.DeepEqual(serviceImport.Spec, t.serviceImport.Spec)).To(BeTrue())
+	Expect(reflect.DeepEqual(serviceImport.Status, t.serviceImport.Status)).To(BeTrue())
 	return serviceImport
+}
+
+func (t *testDriver) deleteBrokerServiceImport() {
+	Expect(t.brokerServiceImportClient.Delete(context.TODO(), t.getServiceNameCluster1(), metav1.DeleteOptions{})).To(Succeed())
 }
 
 func (t *testDriver) getServiceNameCluster1() string {

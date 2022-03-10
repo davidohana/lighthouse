@@ -127,7 +127,7 @@ package controller_test
 //		Context("and it initially does not have a global IP for all endpoint addresses", func() {
 //			It("should eventually sync a ServiceImport and EndpointSlice with the global IPs", func() {
 //				time.Sleep(time.Millisecond * 300)
-//				t.awaitNoEndpointSlice(t.cluster1.localEndpointSliceClient)
+//				t.awaitNoEndpointSliceOnClient(t.cluster1.localEndpointSliceClient)
 //
 //				t.createEndpointIngressIPs()
 //
