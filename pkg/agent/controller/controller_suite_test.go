@@ -577,7 +577,7 @@ func (t *testDriver) createService() {
 	test.CreateResource(t.cluster1.dynamicServiceClient().Namespace(t.service.Namespace), t.service)
 }
 
-func (t *testDriver) createEndpoints() {
+func (t *testDriver) createEndpointsOnCluster1() {
 	_, err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Create(context.TODO(), t.endpoints, metav1.CreateOptions{})
 	Expect(err).To(Succeed())
 

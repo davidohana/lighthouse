@@ -42,7 +42,7 @@ package controller_test
 //	When("a ServiceExport is created", func() {
 //		When("the Endpoints already exists", func() {
 //			It("should correctly sync a ServiceImport and EndpointSlice", func() {
-//				t.createEndpoints()
+//				t.createEndpointsOnCluster1()
 //				t.createLocalServiceExport()
 //
 //				t.awaitHeadlessServiceImport()
@@ -55,7 +55,7 @@ package controller_test
 //				t.createLocalServiceExport()
 //				t.awaitHeadlessServiceImport()
 //
-//				t.createEndpoints()
+//				t.createEndpointsOnCluster1()
 //				t.awaitUpdatedServiceImport("")
 //				t.awaitEndpointSlice()
 //			})
@@ -64,7 +64,7 @@ package controller_test
 //
 //	When("the Endpoints for a service are updated", func() {
 //		It("should update the ServiceImport and EndpointSlice", func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //			t.createLocalServiceExport()
 //
 //			t.awaitHeadlessServiceImport()
@@ -79,7 +79,7 @@ package controller_test
 //
 //	When("a ServiceExport is deleted", func() {
 //		It("should delete the ServiceImport and EndpointSlice", func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //			t.createLocalServiceExport()
 //			t.awaitHeadlessServiceImport()
 //			t.awaitEndpointSlice()

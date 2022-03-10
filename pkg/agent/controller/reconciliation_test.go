@@ -47,7 +47,7 @@ package controller_test
 //		})
 //
 //		JustBeforeEach(func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //		})
 //
 //		It("should delete the ServiceImport and EndpointSlice on reconciliation", func() {
@@ -116,7 +116,7 @@ package controller_test
 //		})
 //
 //		JustBeforeEach(func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //		})
 //
 //		It("should delete it from the broker datastore on reconciliation", func() {
@@ -139,7 +139,7 @@ package controller_test
 //		})
 //
 //		JustBeforeEach(func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //		})
 //
 //		It("should delete it from the local datastore on reconciliation", func() {

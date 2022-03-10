@@ -42,7 +42,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.awaitNoEndpointSlice()
 			t.awaitNoServiceImport()
 
-			t.createEndpoints()
+			t.createEndpointsOnCluster1()
 			t.createBrokerServiceImport()
 			t.awaitServiceImport()
 			t.awaitEndpointSlice()
@@ -69,7 +69,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.awaitServiceImport()
 			t.awaitNoEndpointSlice()
 
-			t.createEndpoints()
+			t.createEndpointsOnCluster1()
 			t.awaitEndpointSlice()
 		})
 	})
@@ -79,7 +79,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.awaitNoEndpointSlice()
 			t.awaitNoServiceImport()
 
-			t.createEndpoints()
+			t.createEndpointsOnCluster1()
 			t.createBrokerServiceImport()
 			t.awaitServiceImport()
 			t.awaitEndpointSlice()
@@ -91,27 +91,33 @@ var _ = Describe("ServiceImport syncing", func() {
 	})
 
 	When("broker service import is deleted out of band after sync", func() {
-		It("should delete it from the clusters datastore on reconciliation", func() {
-			// simulate sync of import from broker to client to get expected local service import state
+		It("should delete import and ep slices from the clusters datastore on reconciliation", func() {
+			// simulate sync of import from broker to client to get expected local state for import and ep slice
 			t.createBrokerServiceImport()
+			t.createEndpointsOnCluster1()
 			localServiceImport1 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
 			localServiceImport2 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
+			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
+			localEpSlice2 := t.cluster2.awaitEndpointSlice(t)
 
 			t.afterEach()                                                            // stop agent controller on all clusters
 			t = newTestDriver()                                                      // create a new driver - data stores are now empty
 			test.CreateResource(t.cluster1.serviceImportClient, localServiceImport1) // create headless import on cluster1
 			test.CreateResource(t.cluster2.serviceImportClient, localServiceImport2) // create headless import on cluster2
+			test.CreateResource(t.cluster1.endpointSliceClient, localEpSlice1)       // create endpoint slice on cluster2
+			test.CreateResource(t.cluster2.endpointSliceClient, localEpSlice2)       // create endpoint slice on cluster2
 			t.justBeforeEach()                                                       // start agent controller on all clusters
 			t.awaitNoServiceImport()                                                 // assert that imports are deleted
+			t.awaitNoEndpointSlice()                                                 // assert that ep slices are deleted
 		})
 	})
 
-	FWhen("broker service import is created out of band", func() {
+	When("broker service import is created out of band", func() {
 		It("should sync it to the clusters datastore on reconciliation", func() {
 			t.afterEach()                 // stop agent controller on all clusters
 			t = newTestDriver()           // create a new driver - data stores are now empty
 			t.createBrokerServiceImport() // create import on broker oob
-			t.createEndpoints()           // create endpoints on origin cluster
+			t.createEndpointsOnCluster1() // create endpoints on origin cluster
 			t.justBeforeEach()            // start agent controller on all clusters
 			t.awaitServiceImport()        // assert that import is synced to clusters
 			t.awaitEndpointSlice()        // assert that ep slice is created and synced to other clusters

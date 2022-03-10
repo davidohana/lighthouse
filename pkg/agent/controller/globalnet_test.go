@@ -110,7 +110,7 @@ package controller_test
 //		})
 //
 //		JustBeforeEach(func() {
-//			t.createEndpoints()
+//			t.createEndpointsOnCluster1()
 //		})
 //
 //		Context("and it has a global IP for all endpoint addresses", func() {
