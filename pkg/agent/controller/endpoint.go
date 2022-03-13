@@ -43,7 +43,7 @@ import (
 
 func startEndpointController(localClient dynamic.Interface, restMapper meta.RESTMapper, scheme *runtime.Scheme,
 	serviceImport *mcsv1a1.ServiceImport, serviceImportNameSpace, serviceName, clusterID string,
-	globalIngressIPCache *globalIngressIPCache) (*EndpointController, error) {
+	globalIngressIPCache *globalIngressIPCache, waitForCahchSync bool) (*EndpointController, error) {
 	logger.V(log.DEBUG).Info("Starting Endpoints controller for service",
 		"namespace", serviceImportNameSpace, "name", serviceName)
 
@@ -75,6 +75,7 @@ func startEndpointController(localClient dynamic.Interface, restMapper meta.REST
 		ResourceType:        &corev1.Endpoints{},
 		Transform:           controller.endpointsToEndpointSliceTransform,
 		Scheme:              scheme,
+		WaitForCacheSync:    &waitForCahchSync,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating Endpoints syncer")

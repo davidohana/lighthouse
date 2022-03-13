@@ -78,6 +78,7 @@ var (
 func init() {
 	logLevel := log.DEBUG
 	//logLevel := log.LIBTRACE
+	//logLevel := log.TRACE
 	args := []string{fmt.Sprintf("-v=%d", logLevel)}
 	// set logging verbosity of agent in unit test to DEBUG
 	flags := flag.NewFlagSet("kzerolog", flag.ExitOnError)

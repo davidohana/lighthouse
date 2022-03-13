@@ -22,7 +22,7 @@ import (
 	"github.com/submariner-io/admiral/pkg/syncer/test"
 )
 
-var _ = FDescribe("Endpoints syncing", func() {
+var _ = Describe("Endpoints syncing", func() {
 	var t *testDriver
 
 	BeforeEach(func() {

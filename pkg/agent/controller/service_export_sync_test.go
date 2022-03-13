@@ -280,30 +280,4 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.awaitServiceExported()     // ensure export is synced to broker
 		})
 	})
-
-	//When("broker service export is set to conflict status out of band", func() {
-	//	It("should update local export status conflict condition on reconciliation", func() {
-	//		logger.Info("Simulating sync to broker to get the export state as it should be on the broker")
-	//		t.createService()
-	//		t.createLocalServiceExport()
-	//		t.awaitServiceExported()
-	//		brokerExport := t.awaitBrokerServiceExport(nil)
-	//
-	//		logger.Info("Performing oob actions")
-	//		t.afterEach()                                                  // stop agent controller on all clusters
-	//		t = newTestDriver()                                            // create a new driver - data stores are now empty
-	//		t.createLocalServiceExport()                                   // create local export
-	//		t.createService()                                              // create local service
-	//		test.CreateResource(t.brokerServiceExportClient, brokerExport) // create broker export
-	//		cond := lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
-	//			corev1.ConditionTrue, "protocol conflict", "export conflict found")
-	//		t.addBrokerServiceExportCondition(brokerExport, cond) // set conflict condition on broker
-	//		t.awaitBrokerServiceExport(cond)                      // assert that conflict cond still exist on broker export
-	//
-	//		logger.Info("Restarting agent controllers")
-	//		t.justBeforeEach()               // start agent controller on all clusters
-	//		t.awaitBrokerServiceExport(cond) // assert that conflict cond still exist on broker export
-	//		t.awaitLocalServiceExport(cond)  // assert that conflict cond exist on local export
-	//	})
-	//})
 })

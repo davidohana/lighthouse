@@ -69,6 +69,7 @@ type ServiceImportController struct {
 	clusterID            string
 	scheme               *runtime.Scheme
 	globalIngressIPCache *globalIngressIPCache
+	waitForCacheSync     bool
 }
 
 // Each EndpointController listens for the endpoints that backs a service and have a ServiceImport

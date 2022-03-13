@@ -169,15 +169,23 @@ var _ = Describe("ServiceImport syncing", func() {
 		})
 	})
 
-	When("broker service import is created out of band", func() {
+	FWhen("broker service import is created out of band", func() {
 		It("should sync it to the clusters datastore on reconciliation", func() {
-			t.afterEach()                 // stop agent controller on all clusters
-			t = newTestDriver()           // create a new driver - data stores are now empty
-			t.createBrokerServiceImport() // create import on broker oob
-			t.createEndpointsOnCluster1() // create endpoints on origin cluster
-			t.justBeforeEach()            // start agent controller on all clusters
-			t.awaitServiceImport()        // assert that import is synced to clusters
-			t.awaitEndpointSlice()        // assert that ep slice is created and synced to other clusters
+			t.afterEach()       // stop agent controller on all clusters
+			t = newTestDriver() // create a new driver - data stores are now empty
+
+			logger.Info("Creating import on broker oob")
+			t.createBrokerServiceImport()
+
+			logger.Info("create endpoints on origin cluster")
+			t.createEndpointsOnCluster1()
+
+			logger.Info("start agent controller on all clusters")
+			t.justBeforeEach()
+
+			logger.Info("Asserting")
+			t.awaitServiceImport() // assert that import is synced to clusters
+			t.awaitEndpointSlice() // assert that ep slice is created and synced to other clusters
 		})
 	})
 

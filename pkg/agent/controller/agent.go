@@ -81,6 +81,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error converting resource")
 	}
 
+	waitForCacheSyncLocal := true
+	waitForCacheSyncBroker := false
+
 	agentController.serviceExportClient = syncerConf.LocalClient.Resource(*gvr)
 
 	syncerConf.LocalNamespace = spec.Namespace
@@ -99,7 +102,9 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 			BrokerResourcesEquivalent: func(obj1, obj2 *unstructured.Unstructured) bool {
 				return false
 			},
-			BrokerTransform: agentController.remoteEndpointSliceToLocal,
+			BrokerTransform:        agentController.remoteEndpointSliceToLocal,
+			BrokerWaitForCacheSync: &waitForCacheSyncBroker,
+			LocalWaitForCacheSync:  &waitForCacheSyncLocal,
 		},
 	}
 
@@ -138,6 +143,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 			Name: syncerMetricNames.ServiceExportUploadsCounterName,
 			Help: "Count of uploaded service exports",
 		},
+		WaitForCacheSync: &waitForCacheSyncLocal,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating ServiceExport uploader")
@@ -160,6 +166,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 			Name: syncerMetricNames.ServiceExportStatusDownloadsCounterName,
 			Help: "Count of downloaded service export statuses",
 		},
+		WaitForCacheSync: &waitForCacheSyncBroker,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
@@ -182,6 +189,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 			Name: syncerMetricNames.ServiceImportDownloadsCounterName,
 			Help: "Count of downloaded service imports",
 		},
+		WaitForCacheSync: &waitForCacheSyncBroker,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating ServiceImport Downloader")
@@ -189,15 +197,16 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 
 	// this syncer will delete service exports at the broker when the correlated local service is deleted
 	agentController.serviceSyncer, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
-		Name:            "Service deletion watcher",
-		SourceClient:    syncerConf.LocalClient,
-		SourceNamespace: metav1.NamespaceAll,
-		RestMapper:      syncerConf.RestMapper,
-		Federator:       agentController.brokerFederator,
-		ResourceType:    &corev1.Service{},
-		ShouldProcess:   agentController.serviceSyncerShouldProcessResource,
-		Transform:       agentController.serviceToRemoteServiceExport,
-		Scheme:          syncerConf.Scheme,
+		Name:             "Service deletion watcher",
+		SourceClient:     syncerConf.LocalClient,
+		SourceNamespace:  metav1.NamespaceAll,
+		RestMapper:       syncerConf.RestMapper,
+		Federator:        agentController.brokerFederator,
+		ResourceType:     &corev1.Service{},
+		ShouldProcess:    agentController.serviceSyncerShouldProcessResource,
+		Transform:        agentController.serviceToRemoteServiceExport,
+		Scheme:           syncerConf.Scheme,
+		WaitForCacheSync: &waitForCacheSyncLocal,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating Service syncer")
@@ -207,7 +216,7 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 	// Endpoint controller creates an EndpointSlice for each Endpoint object.
 	// The created slices are then synchronized with the broker by endpointSliceSyncer
 	agentController.serviceImportController, err = newServiceImportController(spec, agentController.serviceSyncer,
-		syncerConf.RestMapper, syncerConf.LocalClient, syncerConf.Scheme)
+		syncerConf.RestMapper, syncerConf.LocalClient, syncerConf.Scheme, waitForCacheSyncLocal)
 	if err != nil {
 		return nil, err
 	}
@@ -222,32 +231,39 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	agentLogger := logger.WithValues("ClusterID", a.clusterID)
 	agentLogger.Info("Starting Agent controller")
 
+	agentLogger.V(log.DEBUG).Info("Starting Agent controller")
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
 	}
 
+	agentLogger.V(log.DEBUG).Info("Starting ServiceExport status downloader")
 	if err := a.serviceExportStatusDownloader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport status downloader")
 	}
 
+	agentLogger.V(log.DEBUG).Info("Starting Service syncer")
 	if err := a.serviceSyncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting Service syncer")
 	}
 
+	agentLogger.V(log.DEBUG).Info("Starting EndpointSlice syncer")
 	if err := a.endpointSliceSyncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting EndpointSlice syncer")
 	}
 
+	agentLogger.V(log.DEBUG).Info("Starting ServiceImport downloader")
 	if err := a.serviceImportDownloader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceImport downloader")
 	}
 
+	agentLogger.V(log.DEBUG).Info("Starting ServiceImport controller")
 	if err := a.serviceImportController.start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
 
 	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
+	agentLogger.V(log.DEBUG).Info("Checking for ServiceExport-less ServiceExports on the broker")
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
 		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
 			annotations := se.GetAnnotations()
@@ -260,6 +276,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 
 	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service, to delete obsolete service export from the broker
+	agentLogger.V(log.DEBUG).Info("Checking for service-less ServiceExports on the broker")
 	a.serviceSyncer.Reconcile(func() []runtime.Object {
 		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
 			// only care about service exports that originated from this cluster
@@ -278,6 +295,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 
 	// check on startup if a remote service import still exist for all local service imports downloaded from the broker.
 	// if not - enqueue deletion of the service import, to delete obsolete service imports locally
+	agentLogger.V(log.DEBUG).Info("Checking for stale local ServiceImports")
 	a.serviceImportDownloader.Reconcile(a.localServiceImportLister)
 
 	agentLogger.Info("Agent controller started")
