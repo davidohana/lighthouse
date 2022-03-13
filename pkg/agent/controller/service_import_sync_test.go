@@ -169,7 +169,7 @@ var _ = Describe("ServiceImport syncing", func() {
 		})
 	})
 
-	FWhen("broker service import is created out of band", func() {
+	When("broker service import is created out of band", func() {
 		It("should sync it to the clusters datastore on reconciliation", func() {
 			t.afterEach()       // stop agent controller on all clusters
 			t = newTestDriver() // create a new driver - data stores are now empty
