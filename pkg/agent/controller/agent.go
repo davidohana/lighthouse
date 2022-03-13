@@ -494,18 +494,18 @@ func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) ServiceExpor
 	return ""
 }
 
-func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
-	if op == syncer.Delete {
-		return
-	}
-
-	serviceImport := synced.(*mcsv1a1.ServiceImport)
-
-	annotations := serviceImport.GetAnnotations()
-	a.updateExportedServiceStatus(annotations[lhconstants.OriginName], annotations[lhconstants.OriginNamespace],
-		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
-		"Service was successfully synced to the broker")
-}
+//func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
+//	if op == syncer.Delete {
+//		return
+//	}
+//
+//	serviceImport := synced.(*mcsv1a1.ServiceImport)
+//
+//	annotations := serviceImport.GetAnnotations()
+//	a.updateExportedServiceStatus(annotations[lhconstants.OriginName], annotations[lhconstants.OriginNamespace],
+//		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
+//		"Service was successfully synced to the broker")
+//}
 
 func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syncer.Operation) {
 	if op == syncer.Delete {
