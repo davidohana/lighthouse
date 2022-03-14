@@ -205,26 +205,28 @@ var _ = Describe("ServiceExport syncing", func() {
 
 	When("hub updates service export conflict status", func() {
 		It("only condition of conflict status shall be updated on local export", func() {
-			// sync export to broker
+			logger.Info("Sync export to broker")
 			t.createService()
 			t.createLocalServiceExport()
 			t.awaitServiceExported()
 			brokerExport := t.awaitBrokerServiceExport(nil)
 
-			// create a condition other than conflict - should not be downloaded
+			logger.Info("Create a condition other than conflict on broker - should not be downloaded to spoke")
 			cond := lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportValid,
 				corev1.ConditionFalse, "other reason", "other message")
 			t.addBrokerServiceExportCondition(brokerExport, cond)
-			t.awaitNotServiceExportStatus(cond)
+			time.Sleep(300 * time.Millisecond)
+			localServiceExport := t.awaitLocalServiceExport(nil)
 			t.awaitServiceExported()
+			Expect(lhutil.GetServiceExportCondition(&localServiceExport.Status, mcsv1a1.ServiceExportConflict)).To(BeNil())
 
-			// create conflict condition - should be downloaded
+			logger.Info("Create conflict condition - should be downloaded")
 			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
 				corev1.ConditionTrue, "protocol conflict", "export conflict found")
 			t.addBrokerServiceExportCondition(brokerExport, cond)
 			t.awaitLocalServiceExport(cond)
 
-			// resolve conflict condition - should be downloaded
+			logger.Info("Resolve conflict condition - should be downloaded")
 			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
 				corev1.ConditionFalse, "protocol conflict resolved", "export conflict resolved")
 			t.addBrokerServiceExportCondition(brokerExport, cond)

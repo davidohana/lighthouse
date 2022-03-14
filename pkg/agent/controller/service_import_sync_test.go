@@ -112,7 +112,7 @@ var _ = Describe("ServiceImport syncing", func() {
 	})
 
 	When("local endpoints updated while an EndpointSlice exist", func() {
-		It("should update endpoint slice from all clusters", func() {
+		It("should update endpoint slice in all clusters", func() {
 			t.awaitNoEndpointSlice()
 			t.awaitNoServiceImport()
 
