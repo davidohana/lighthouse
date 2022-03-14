@@ -32,9 +32,15 @@ import (
 )
 
 var (
+	serviceExportGVR = schema.GroupVersionResource{
+		Group:    mcsv1a1.GroupName,
+		Version:  mcsv1a1.GroupVersion.Version,
+		Resource: "serviceexports",
+	}
+
 	serviceImportGVR = schema.GroupVersionResource{
 		Group:    mcsv1a1.GroupName,
-		Version:  mcsv1a1.SchemeGroupVersion.Version,
+		Version:  mcsv1a1.GroupVersion.Version,
 		Resource: "serviceimports",
 	}
 
@@ -46,45 +52,49 @@ var (
 )
 
 func (a *Controller) Cleanup() error {
-	// Delete all ServiceImports from the local cluster skipping those in the broker namespace if the broker is on the
-	// local cluster.
-	err := a.localClient.Resource(serviceImportGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
-		metav1.DeleteOptions{},
-		metav1.ListOptions{
-			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String(),
-		})
+	notInBrokerNamespace := fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String()
+	listOptionsFilterByLHSorceClusterLabel := metav1.ListOptions{
+		LabelSelector: labels.Set(map[string]string{lhconstants.LighthouseLabelSourceCluster: a.clusterID}).String(),
+	}
+	delOptions := metav1.DeleteOptions{}
+
+	logger.Info("Deleting all ServiceImports from the local cluster")
+	//  skipping those in the broker namespace (if the broker is on the local cluster)
+	err := a.localClient.Resource(serviceImportGVR).Namespace(metav1.NamespaceAll).DeleteCollection(
+		context.TODO(), delOptions,
+		metav1.ListOptions{FieldSelector: notInBrokerNamespace})
 	if err != nil {
 		return errors.Wrap(err, "error deleting local ServiceImports")
 	}
 
-	// Delete all local ServiceImports from the broker.
-	err = a.brokerClient.Resource(serviceImportGVR).Namespace(a.brokerNamespace).
-		DeleteCollection(context.TODO(), metav1.DeleteOptions{},
-			metav1.ListOptions{
-				LabelSelector: labels.Set(map[string]string{lhconstants.LighthouseLabelSourceCluster: a.clusterID}).String(),
-			})
+	logger.Info("Deleting all ServiceExports originated from this cluster from the broker")
+	err = a.brokerClient.Resource(serviceExportGVR).Namespace(a.brokerNamespace).DeleteCollection(
+		context.TODO(), delOptions, listOptionsFilterByLHSorceClusterLabel)
 	if err != nil {
-		return errors.Wrap(err, "error deleting remote EndpointSlices")
+		return errors.Wrap(err, "error deleting remote ServiceExports")
 	}
 
-	// Delete all EndpointSlices from the local cluster skipping those in the broker namespace if the broker is on the
-	// local cluster.
-	err = a.localClient.Resource(endpointSliceGVR).Namespace(metav1.NamespaceAll).DeleteCollection(context.TODO(),
-		metav1.DeleteOptions{},
+	logger.Info("Deleting all EndpointSlices from the local cluster")
+	// skipping those in the broker namespace (if the broker is on the local cluster).
+	err = a.localClient.Resource(endpointSliceGVR).Namespace(metav1.NamespaceAll).DeleteCollection(
+		context.TODO(), delOptions,
 		metav1.ListOptions{
-			FieldSelector: fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String(),
+			FieldSelector: notInBrokerNamespace,
 			LabelSelector: labels.Set(map[string]string{discovery.LabelManagedBy: lhconstants.LabelValueManagedBy}).String(),
 		})
 	if err != nil {
 		return errors.Wrap(err, "error deleting local EndpointSlices")
 	}
 
-	// Delete all local EndpointSlices from the broker.
-	err = a.brokerClient.Resource(endpointSliceGVR).Namespace(a.brokerNamespace).
-		DeleteCollection(context.TODO(), metav1.DeleteOptions{},
-			metav1.ListOptions{
-				LabelSelector: labels.Set(map[string]string{lhconstants.MCSLabelSourceCluster: a.clusterID}).String(),
-			})
+	logger.Info("Deleting all EndpointSlices originated from this cluster from the broker")
+	err = a.brokerClient.Resource(endpointSliceGVR).Namespace(a.brokerNamespace).DeleteCollection(
+		context.TODO(), delOptions,
+		metav1.ListOptions{
+			LabelSelector: labels.Set(map[string]string{lhconstants.MCSLabelSourceCluster: a.clusterID}).String(),
+		})
+	if err != nil {
+		return errors.Wrap(err, "error deleting remote EndpointSlices")
+	}
 
-	return errors.Wrap(err, "error deleting remote EndpointSlices")
+	return nil
 }

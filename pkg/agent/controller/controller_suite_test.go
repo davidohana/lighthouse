@@ -123,7 +123,8 @@ type testDriver struct {
 	brokerEndpointSliceClient *fake.DynamicResourceClient
 	service                   *corev1.Service
 	serviceExport             *mcsv1a1.ServiceExport
-	serviceImport             *mcsv1a1.ServiceImport
+	serviceImportCluster1     *mcsv1a1.ServiceImport
+	serviceImportCluster2     *mcsv1a1.ServiceImport
 	endpoints                 *corev1.Endpoints
 	stopCh                    chan struct{}
 	syncerConfig              *broker.SyncerConfig
@@ -182,32 +183,37 @@ func newTestDriver() *testDriver {
 		},
 	}
 
-	t.serviceImport = &mcsv1a1.ServiceImport{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              t.getServiceNameCluster1(),
-			Namespace:         test.RemoteNamespace,
-			CreationTimestamp: metav1.Now(),
-			Labels: map[string]string{
-				lhconstants.LighthouseLabelSourceName:    t.service.Name,
-				lhconstants.LabelSourceNamespace:         t.service.Namespace,
-				lhconstants.LighthouseLabelSourceCluster: clusterID1,
-			},
-			Annotations: map[string]string{
-				lhconstants.OriginName:      t.service.Name,
-				lhconstants.OriginNamespace: t.service.Namespace,
-			},
-		},
-		Spec: mcsv1a1.ServiceImportSpec{
-			Type: mcsv1a1.ClusterSetIP,
-		},
-		Status: mcsv1a1.ServiceImportStatus{
-			Clusters: []mcsv1a1.ClusterStatus{
-				{
-					Cluster: clusterID1,
+	generateImport := func(clusterID string) *mcsv1a1.ServiceImport {
+		return &mcsv1a1.ServiceImport{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              lhutil.GenerateObjectName(t.service.Name, t.service.Namespace, clusterID),
+				Namespace:         test.RemoteNamespace,
+				CreationTimestamp: metav1.Now(),
+				Labels: map[string]string{
+					lhconstants.LighthouseLabelSourceName:    t.service.Name,
+					lhconstants.LabelSourceNamespace:         t.service.Namespace,
+					lhconstants.LighthouseLabelSourceCluster: clusterID,
+				},
+				Annotations: map[string]string{
+					lhconstants.OriginName:      t.service.Name,
+					lhconstants.OriginNamespace: t.service.Namespace,
 				},
 			},
-		},
+			Spec: mcsv1a1.ServiceImportSpec{
+				Type: mcsv1a1.ClusterSetIP,
+			},
+			Status: mcsv1a1.ServiceImportStatus{
+				Clusters: []mcsv1a1.ClusterStatus{
+					{
+						Cluster: clusterID,
+					},
+				},
+			},
+		}
 	}
+
+	t.serviceImportCluster1 = generateImport(clusterID1)
+	t.serviceImportCluster2 = generateImport(clusterID2)
 
 	t.endpoints = &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
@@ -447,8 +453,8 @@ func (c *cluster) awaitUpdatedServiceImport(service *corev1.Service, serviceIP s
 }
 
 func awaitEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints *corev1.Endpoints,
-	service *corev1.Service, namespace string, globalIPs []string) *discovery.EndpointSlice {
-	obj := test.AwaitResource(endpointSliceClient, endpoints.Name+"-"+clusterID1)
+	service *corev1.Service, namespace string, globalIPs []string, clusterID string) *discovery.EndpointSlice {
+	obj := test.AwaitResource(endpointSliceClient, endpoints.Name+"-"+clusterID)
 
 	endpointSlice := &discovery.EndpointSlice{}
 	Expect(scheme.Scheme.Convert(obj, endpointSlice, nil)).To(Succeed())
@@ -457,7 +463,7 @@ func awaitEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints
 	labels := endpointSlice.GetLabels()
 	Expect(labels).To(HaveKeyWithValue(discovery.LabelManagedBy, lhconstants.LabelValueManagedBy))
 	Expect(labels).To(HaveKeyWithValue(lhconstants.LabelSourceNamespace, service.Namespace))
-	Expect(labels).To(HaveKeyWithValue(lhconstants.MCSLabelSourceCluster, clusterID1))
+	Expect(labels).To(HaveKeyWithValue(lhconstants.MCSLabelSourceCluster, clusterID))
 	Expect(labels).To(HaveKeyWithValue(lhconstants.MCSLabelServiceName, service.Name))
 
 	Expect(endpointSlice.AddressType).To(Equal(discovery.AddressTypeIPv4))
@@ -501,10 +507,6 @@ func awaitEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints
 	}))
 
 	return endpointSlice
-}
-
-func (c *cluster) awaitEndpointSlice(t *testDriver) *discovery.EndpointSlice {
-	return awaitEndpointSlice(c.endpointSliceClient, t.endpoints, t.service, t.service.Namespace, t.endpointGlobalIPs)
 }
 
 func awaitUpdatedEndpointSlice(endpointSliceClient dynamic.ResourceInterface, endpoints *corev1.Endpoints) {
@@ -555,8 +557,12 @@ func (c *cluster) dynamicServiceClient() dynamic.NamespaceableResourceInterface 
 //	return awaitServiceImport(t.brokerServiceImportClient, t.service, sType, serviceIP)
 //}
 
-func (t *testDriver) awaitBrokerEndpointSlice() *discovery.EndpointSlice {
-	return awaitEndpointSlice(t.brokerEndpointSliceClient, t.endpoints, t.service, test.RemoteNamespace, t.endpointGlobalIPs)
+func (t *testDriver) awaitBrokerEndpointSlice(clusterID string) *discovery.EndpointSlice {
+	return awaitEndpointSlice(t.brokerEndpointSliceClient, t.endpoints, t.service, test.RemoteNamespace, t.endpointGlobalIPs, clusterID)
+}
+
+func (t *testDriver) awaitLocalEndpointSlice(client dynamic.ResourceInterface, clusterID string) *discovery.EndpointSlice {
+	return awaitEndpointSlice(client, t.endpoints, t.service, t.service.Namespace, t.endpointGlobalIPs, clusterID)
 }
 
 func (t *testDriver) awaitUpdatedServiceImport(serviceIP string) {
@@ -566,9 +572,9 @@ func (t *testDriver) awaitUpdatedServiceImport(serviceIP string) {
 }
 
 func (t *testDriver) awaitEndpointSlice() {
-	t.awaitBrokerEndpointSlice()
-	t.cluster1.awaitEndpointSlice(t)
-	t.cluster2.awaitEndpointSlice(t)
+	t.awaitBrokerEndpointSlice(clusterID1)
+	t.awaitLocalEndpointSlice(t.cluster1.endpointSliceClient, clusterID1)
+	t.awaitLocalEndpointSlice(t.cluster2.endpointSliceClient, clusterID1)
 }
 
 func (t *testDriver) awaitUpdatedEndpointSlice() {
@@ -588,14 +594,14 @@ func (t *testDriver) createEndpointsOnCluster1() {
 	_, err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Create(context.TODO(), t.endpoints, metav1.CreateOptions{})
 	Expect(err).To(Succeed())
 
-	test.CreateResource(t.dynamicEndpointsClient(), t.endpoints)
+	test.CreateResource(t.dynamicEndpointsClient(t.cluster1), t.endpoints)
 }
 
 func (t *testDriver) deleteEndpointsOnCluster1() {
 	err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
 	Expect(err).To(Succeed())
 
-	err = t.dynamicEndpointsClient().Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
+	err = t.dynamicEndpointsClient(t.cluster1).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
 	Expect(err).To(Succeed())
 }
 
@@ -603,11 +609,11 @@ func (t *testDriver) updateEndpoints() {
 	_, err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Update(context.TODO(), t.endpoints, metav1.UpdateOptions{})
 	Expect(err).To(Succeed())
 
-	test.UpdateResource(t.dynamicEndpointsClient(), t.endpoints)
+	test.UpdateResource(t.dynamicEndpointsClient(t.cluster1), t.endpoints)
 }
 
-func (t *testDriver) dynamicEndpointsClient() dynamic.ResourceInterface {
-	return t.cluster1.dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "endpoints"}).Namespace(t.service.Namespace)
+func (t *testDriver) dynamicEndpointsClient(cluster cluster) dynamic.ResourceInterface {
+	return cluster.dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "endpoints"}).Namespace(t.service.Namespace)
 }
 
 func (t *testDriver) createLocalServiceExport() {
@@ -858,7 +864,7 @@ func (t *testDriver) addBrokerServiceExportCondition(brokerExport *mcsv1a1.Servi
 }
 
 func (t *testDriver) createBrokerServiceImport() {
-	test.CreateResource(t.brokerServiceImportClient, t.serviceImport)
+	test.CreateResource(t.brokerServiceImportClient, t.serviceImportCluster1)
 }
 
 func (t *testDriver) awaitServiceImport() {
@@ -879,8 +885,8 @@ func (t *testDriver) awaitServiceImportOnClient(client dynamic.ResourceInterface
 	Expect(serviceImport.Annotations[lhconstants.OriginName]).To(Equal(t.service.Name))
 	Expect(serviceImport.Annotations[lhconstants.OriginNamespace]).To(Equal(t.service.Namespace))
 
-	Expect(reflect.DeepEqual(serviceImport.Spec, t.serviceImport.Spec)).To(BeTrue())
-	Expect(reflect.DeepEqual(serviceImport.Status, t.serviceImport.Status)).To(BeTrue())
+	Expect(reflect.DeepEqual(serviceImport.Spec, t.serviceImportCluster1.Spec)).To(BeTrue())
+	Expect(reflect.DeepEqual(serviceImport.Status, t.serviceImportCluster1.Status)).To(BeTrue())
 	return serviceImport
 }
 
@@ -890,4 +896,8 @@ func (t *testDriver) deleteBrokerServiceImport() {
 
 func (t *testDriver) getServiceNameCluster1() string {
 	return lhutil.GenerateObjectName(t.service.Name, t.service.Namespace, clusterID1)
+}
+
+func (t *testDriver) getServiceNameCluster2() string {
+	return lhutil.GenerateObjectName(t.service.Name, t.service.Namespace, clusterID2)
 }

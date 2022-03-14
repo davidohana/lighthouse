@@ -53,11 +53,11 @@ var _ = Describe("ServiceImport syncing", func() {
 
 	When("a headless ServiceImport is created on broker when local Endpoints exist", func() {
 		JustBeforeEach(func() {
-			t.serviceImport.Spec.Type = mcsv1a1.Headless
+			t.serviceImportCluster1.Spec.Type = mcsv1a1.Headless
 		})
 
 		JustAfterEach(func() {
-			t.serviceImport.Spec.Type = mcsv1a1.ClusterSetIP
+			t.serviceImportCluster1.Spec.Type = mcsv1a1.ClusterSetIP
 		})
 
 		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
@@ -154,8 +154,8 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.createEndpointsOnCluster1()
 			localServiceImport1 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
 			localServiceImport2 := t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
-			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
-			localEpSlice2 := t.cluster2.awaitEndpointSlice(t)
+			localEpSlice1 := t.awaitLocalEndpointSlice(t.cluster1.endpointSliceClient, clusterID1)
+			localEpSlice2 := t.awaitLocalEndpointSlice(t.cluster2.endpointSliceClient, clusterID1)
 
 			t.afterEach()                                                            // stop agent controller on all clusters
 			t = newTestDriver()                                                      // create a new driver - data stores are now empty
@@ -194,8 +194,8 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.createBrokerServiceImport()
 			t.createEndpointsOnCluster1()
 			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
-			brokerEpSlice := t.awaitBrokerEndpointSlice()
-			localEpSlice2 := t.cluster2.awaitEndpointSlice(t)
+			brokerEpSlice := t.awaitBrokerEndpointSlice(clusterID1)
+			localEpSlice2 := t.awaitLocalEndpointSlice(t.cluster2.endpointSliceClient, clusterID1)
 
 			t.afterEach()                                                      // stop agent controller on all clusters
 			t = newTestDriver()                                                // create a new driver - data stores are now empty
@@ -211,7 +211,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.createBrokerServiceImport()
 			t.createEndpointsOnCluster1()
 			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
-			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
+			localEpSlice1 := t.awaitLocalEndpointSlice(t.cluster1.endpointSliceClient, clusterID1)
 
 			t.afterEach()                                                      // stop agent controller on all clusters
 			t = newTestDriver()                                                // create a new driver - data stores are now empty
@@ -226,7 +226,7 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.createBrokerServiceImport()
 			t.createEndpointsOnCluster1()
 			t.awaitServiceImportOnClient(t.cluster1.serviceImportClient)
-			localEpSlice1 := t.cluster1.awaitEndpointSlice(t)
+			localEpSlice1 := t.awaitLocalEndpointSlice(t.cluster1.endpointSliceClient, clusterID1)
 
 			t.afterEach()                                                      // stop agent controller on all clusters
 			t = newTestDriver()                                                // create a new driver - data stores are now empty
