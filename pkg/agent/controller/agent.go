@@ -317,11 +317,7 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 		se := obj.(*mcsv1a1.ServiceExport)
 
 		var transformed runtime.Object
-		if transform == nil {
-			transformed = se
-		} else {
-			transformed = transform(se)
-		}
+		transformed = transform(se)
 		if transformed != nil {
 			retList = append(retList, transformed)
 		}
@@ -387,11 +383,12 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	}
 
 	seLog.V(log.DEBUG).Info("Local service exist for export")
-	// this is a status update of the local export and service exist.
-	// we want to continue only if the last "Valid" condition of the export is "service unavailable"
-	// which means that service was previously not available and is now available
-	// so the export should be uploaded to the broker
-	if op == syncer.Update && getLastExportConditionReason(localServiceExport) != ReasonServiceUnavailable {
+	// this is a status update of the local export and the service exist.
+	// we want to continue only if current validity condition of the export
+	// is in status "service unavailable", which means that service was previously not
+	// available, and when processing the current requeue it is available again.
+	// --> the export should be uploaded to the broker.
+	if op == syncer.Update && !isExportStatusServiceUnavailable(localServiceExport) {
 		return nil, false
 	}
 
@@ -484,28 +481,6 @@ func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionTyp
 	}
 	return nil
 }
-
-func getLastExportConditionReason(svcExport *mcsv1a1.ServiceExport) ServiceExportConditionReason {
-	numCond := len(svcExport.Status.Conditions)
-	if numCond > 0 && svcExport.Status.Conditions[numCond-1].Reason != nil {
-		return ServiceExportConditionReason(*svcExport.Status.Conditions[numCond-1].Reason)
-	}
-
-	return ""
-}
-
-//func (a *Controller) onSuccessfulServiceImportSync(synced runtime.Object, op syncer.Operation) {
-//	if op == syncer.Delete {
-//		return
-//	}
-//
-//	serviceImport := synced.(*mcsv1a1.ServiceImport)
-//
-//	annotations := serviceImport.GetAnnotations()
-//	a.updateExportedServiceStatus(annotations[lhconstants.OriginName], annotations[lhconstants.OriginNamespace],
-//		mcsv1a1.ServiceExportValid, corev1.ConditionTrue, "",
-//		"Service was successfully synced to the broker")
-//}
 
 func (a *Controller) onSuccessfulServiceExportSync(synced runtime.Object, op syncer.Operation) {
 	if op == syncer.Delete {
@@ -661,37 +636,6 @@ func (a *Controller) newServiceExport(name, namespace string) *mcsv1a1.ServiceEx
 	}
 }
 
-func (a *Controller) newServiceImport(name, namespace string) *mcsv1a1.ServiceImport {
-	return &mcsv1a1.ServiceImport{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: a.getObjectNameWithClusterID(name, namespace),
-			Annotations: map[string]string{
-				lhconstants.OriginName:      name,
-				lhconstants.OriginNamespace: namespace,
-			},
-			Labels: map[string]string{
-				lhconstants.LighthouseLabelSourceName:    name,
-				lhconstants.LabelSourceNamespace:         namespace,
-				lhconstants.LighthouseLabelSourceCluster: a.clusterID,
-			},
-		},
-	}
-}
-
-func (a *Controller) getPortsForService(service *corev1.Service) []mcsv1a1.ServicePort {
-	mcsPorts := make([]mcsv1a1.ServicePort, 0, len(service.Spec.Ports))
-
-	for _, port := range service.Spec.Ports {
-		mcsPorts = append(mcsPorts, mcsv1a1.ServicePort{
-			Name:     port.Name,
-			Protocol: port.Protocol,
-			Port:     port.Port,
-		})
-	}
-
-	return mcsPorts
-}
-
 func (a *Controller) getObjectNameWithClusterID(name, namespace string) string {
 	return lhutil.GenerateObjectName(name, namespace, a.clusterID)
 }
@@ -710,32 +654,15 @@ func (a *Controller) endpointSliceSyncerShouldProcessResource(obj *unstructured.
 	return labels[discovery.LabelManagedBy] == lhconstants.LabelValueManagedBy
 }
 
-func (a *Controller) getGlobalIP(service *corev1.Service) (ip, reason, msg string) {
-	if a.globalnetEnabled {
-		ingressIP, found := a.getIngressIP(service.Name, service.Namespace)
-		if !found {
-			return "", defaultReasonIPUnavailable, defaultMsgIPUnavailable
-		}
-
-		return ingressIP.allocatedIP, ingressIP.unallocatedReason, ingressIP.unallocatedMsg
-	}
-
-	return "", "GlobalnetDisabled", "Globalnet is not enabled"
-}
-
-func (a *Controller) getIngressIP(name, namespace string) (*IngressIP, bool) {
-	obj, found := a.serviceImportController.globalIngressIPCache.getForService(namespace, name)
-	if !found {
-		return nil, false
-	}
-
-	return parseIngressIP(obj), true
-}
-
 func (a *Controller) handleServiceExportTransformError(err error, svcExport *mcsv1a1.ServiceExport,
 	reason ServiceExportConditionReason, errMessage string) {
 	logger.Error(err, "ServiceExport upload transform failed: "+errMessage,
 		"name", svcExport.Name+"/"+svcExport.Namespace)
 	a.updateExportedServiceStatus(svcExport.Name, svcExport.Namespace,
 		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, reason, errMessage)
+}
+
+func isExportStatusServiceUnavailable(export *mcsv1a1.ServiceExport) bool {
+	cond := lhutil.GetServiceExportCondition(&export.Status, mcsv1a1.ServiceExportValid)
+	return cond != nil && ServiceExportConditionReason(*cond.Reason) == ReasonServiceUnavailable
 }

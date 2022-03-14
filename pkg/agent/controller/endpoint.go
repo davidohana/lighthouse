@@ -200,7 +200,7 @@ func (e *EndpointController) endpointSliceFromEndpoints(endpoints *corev1.Endpoi
 
 func (e *EndpointController) getEndpointsFromAddresses(addresses []corev1.EndpointAddress, addressType discovery.AddressType,
 	ready bool) ([]discovery.Endpoint, bool) {
-	endpoints := []discovery.Endpoint{}
+	var endpoints []discovery.Endpoint
 	isIPv6AddressType := addressType == discovery.AddressTypeIPv6
 
 	for i := range addresses {
