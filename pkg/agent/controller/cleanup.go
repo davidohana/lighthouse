@@ -74,6 +74,7 @@ func (a *Controller) Cleanup() error {
 	}
 
 	logger.Info("Deleting all ServiceExports originated from this cluster from the broker")
+
 	err = a.brokerClient.Resource(serviceExportGVR).Namespace(a.brokerNamespace).DeleteCollection(
 		context.TODO(), delOptions, listOptionsFilterByLHSourceClusterLabel)
 	if err != nil {
@@ -81,6 +82,7 @@ func (a *Controller) Cleanup() error {
 	}
 
 	logger.Info("Deleting all EndpointSlices from the local cluster")
+
 	// skipping those in the broker namespace (if the broker is on the local cluster).
 	err = a.localClient.Resource(endpointSliceGVR).Namespace(metav1.NamespaceAll).DeleteCollection(
 		context.TODO(), delOptions,
@@ -93,6 +95,7 @@ func (a *Controller) Cleanup() error {
 	}
 
 	logger.Info("Deleting all EndpointSlices originated from this cluster from the broker")
+
 	err = a.brokerClient.Resource(endpointSliceGVR).Namespace(a.brokerNamespace).DeleteCollection(
 		context.TODO(), delOptions,
 		metav1.ListOptions{

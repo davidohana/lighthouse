@@ -18,9 +18,9 @@ limitations under the License.
 package controller
 
 import (
-	"github.com/submariner-io/admiral/pkg/federate"
 	"sync"
 
+	"github.com/submariner-io/admiral/pkg/federate"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/watcher"

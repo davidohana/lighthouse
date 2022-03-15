@@ -22,11 +22,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"k8s.io/client-go/kubernetes/scheme"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 	mcsclient "sigs.k8s.io/mcs-api/pkg/client/clientset/versioned"

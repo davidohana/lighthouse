@@ -128,7 +128,8 @@ func (e *EndpointController) cleanup() {
 	}
 }
 
-func (e *EndpointController) endpointsToEndpointSliceTransform(obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (e *EndpointController) endpointsToEndpointSliceTransform(
+	obj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	endPoints := obj.(*corev1.Endpoints)
 
 	endpointSliceName := endPoints.Name + "-" + e.clusterID
@@ -149,7 +150,7 @@ func (e *EndpointController) endpointsToEndpointSliceTransform(obj runtime.Objec
 	return e.endpointSliceFromEndpoints(endPoints, op)
 }
 
-func (e *EndpointController) endpointSliceFromEndpoints(endpoints *corev1.Endpoints, op syncer.Operation) (
+func (e *EndpointController) endpointSliceFromEndpoints(endpoints *corev1.Endpoints, _ syncer.Operation) (
 	runtime.Object, bool) {
 	endpointSlice := &discovery.EndpointSlice{}
 
@@ -200,7 +201,8 @@ func (e *EndpointController) endpointSliceFromEndpoints(endpoints *corev1.Endpoi
 
 func (e *EndpointController) getEndpointsFromAddresses(addresses []corev1.EndpointAddress, addressType discovery.AddressType,
 	ready bool) ([]discovery.Endpoint, bool) {
-	var endpoints []discovery.Endpoint
+	//goland:noinspection GoPreferNilSlice
+	endpoints := []discovery.Endpoint{}
 	isIPv6AddressType := addressType == discovery.AddressTypeIPv6
 
 	for i := range addresses {

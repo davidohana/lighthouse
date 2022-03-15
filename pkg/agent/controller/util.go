@@ -3,8 +3,9 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	"reflect"
+
+	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
@@ -13,10 +14,11 @@ func PrettyPrint(obj interface{}) string {
 	if err != nil {
 		return fmt.Sprintf("%#v", obj)
 	}
+
 	return string(jsonBytes)
 }
 
-func GetObjectNameWithClusterID(name, namespace string, clusterID string) string {
+func GetObjectNameWithClusterID(name, namespace, clusterID string) string {
 	return lhutil.GenerateObjectName(name, namespace, clusterID)
 }
 

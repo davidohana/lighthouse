@@ -19,7 +19,10 @@ package controller_test
 
 import (
 	"errors"
+	"time"
+
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
 	"github.com/submariner-io/lighthouse/pkg/agent/controller"
 	"github.com/submariner-io/lighthouse/pkg/lhutil"
@@ -28,9 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
-	"time"
 )
-import . "github.com/onsi/gomega"
 
 var _ = Describe("ServiceExport syncing", func() {
 	var t *testDriver
@@ -104,7 +105,7 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.createService()
 			t.createLocalServiceExport()
 
-			condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonAwaitingSync)
+			condition := newServiceExportValidityCondition(corev1.ConditionFalse, controller.ReasonAwaitingSync)
 			t.awaitLocalServiceExport(condition)
 
 			t.awaitNoServiceExportOnBroker()
@@ -146,7 +147,7 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.createService()
 			t.createLocalServiceExport()
 
-			condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonUnsupportedServiceType)
+			condition := newServiceExportValidityCondition(corev1.ConditionFalse, controller.ReasonUnsupportedServiceType)
 			t.awaitLocalServiceExport(condition)
 
 			t.awaitNoServiceExportOnBroker()
@@ -183,7 +184,7 @@ var _ = Describe("ServiceExport syncing", func() {
 			Expect(exportSpec.Service.Ports[1].Protocol).To(Equal(corev1.ProtocolSCTP))
 			Expect(exportSpec.Service.Ports[0].Port).To(BeNumerically("==", 123))
 			Expect(exportSpec.Service.Ports[1].Port).To(BeNumerically("==", 1234))
-			Expect(time.Now().Sub(exportSpec.CreatedAt.Time)).To(BeNumerically("<", 60*time.Second))
+			Expect(time.Since(exportSpec.CreatedAt.Time)).To(BeNumerically("<", 60*time.Second))
 		})
 	})
 
@@ -221,15 +222,18 @@ var _ = Describe("ServiceExport syncing", func() {
 			Expect(lhutil.GetServiceExportCondition(&localServiceExport.Status, mcsv1a1.ServiceExportConflict)).To(BeNil())
 
 			logger.Info("Create conflict condition - should be downloaded")
-			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
-				corev1.ConditionTrue, "protocol conflict", "export conflict found")
+			cond =
+				lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
+					corev1.ConditionTrue, "protocol conflict", "export conflict found")
 			t.addBrokerServiceExportCondition(brokerExport, cond)
+			t.awaitBrokerServiceExport(cond)
 			t.awaitLocalServiceExport(cond)
 
 			logger.Info("Resolve conflict condition - should be downloaded")
 			cond = lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportConflict,
 				corev1.ConditionFalse, "protocol conflict resolved", "export conflict resolved")
 			t.addBrokerServiceExportCondition(brokerExport, cond)
+			t.awaitBrokerServiceExport(cond)
 			t.awaitLocalServiceExport(cond)
 		})
 	})
@@ -264,11 +268,12 @@ var _ = Describe("ServiceExport syncing", func() {
 			t.afterEach()                                                         // stop agent controller on all clusters
 			t = newTestDriver()                                                   // create a new driver - data stores are now empty
 			test.CreateResource(t.brokerServiceExportClient, brokerServiceExport) // create export on broker only
-			t.justBeforeEach()                                                    // start agent controller on all clusters, both export and service are missing
-			t.awaitNoServiceExportOnBroker()                                      // ensure that the export is deleted from broker
-			t.createLocalServiceExport()                                          // recreate local export online
-			t.createService()                                                     // recreate local service online
-			t.awaitServiceExported()                                              // ensure export is synced to broker
+
+			t.justBeforeEach()               // start agent controller on all clusters, both export and service are missing
+			t.awaitNoServiceExportOnBroker() // ensure that the export is deleted from broker
+			t.createLocalServiceExport()     // recreate local export online
+			t.createService()                // recreate local service online
+			t.awaitServiceExported()         // ensure export is synced to broker
 		})
 	})
 

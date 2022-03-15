@@ -71,7 +71,7 @@ func main() {
 	} else if verbosity := os.Getenv("SUBMARINER_VERBOSITY"); verbosity != "" {
 		os.Args = append(os.Args, fmt.Sprintf("-v=%s", verbosity))
 	} else {
-		os.Args = append(os.Args, fmt.Sprintf("-v=%d", log.LIBTRACE)) //todo: revert to DEBUG
+		os.Args = append(os.Args, fmt.Sprintf("-v=%d", log.LIBTRACE)) // todo: revert to DEBUG
 	}
 
 	kzerolog.AddFlags(nil)

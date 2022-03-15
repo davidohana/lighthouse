@@ -89,6 +89,7 @@ func (c *globalIngressIPCache) applyToCache(obj *unstructured.Unstructured,
 	}
 }
 
+// nolint:unused  // remove when globalnet support is nabled
 func (c *globalIngressIPCache) getForService(namespace, name string) (*unstructured.Unstructured, bool) {
 	return c.get(&c.byService, namespace, name)
 }

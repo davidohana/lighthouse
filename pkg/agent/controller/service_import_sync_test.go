@@ -40,7 +40,8 @@ var _ = Describe("ServiceImport syncing", func() {
 	})
 
 	When("a ServiceImport is created on broker when local Endpoints exist", func() {
-		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
+		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster "+
+			"and sync to broker and other cluster", func() {
 			t.awaitNoEndpointSlice()
 			t.awaitNoServiceImport()
 
@@ -60,7 +61,8 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.serviceImportCluster1.Spec.Type = mcsv1a1.ClusterSetIP
 		})
 
-		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster and sync to broker and other cluster", func() {
+		It("should download the ServiceImport to all clusters, create EndpointSlice in origin cluster "+
+			"and sync to broker and other cluster", func() {
 			t.awaitNoEndpointSlice()
 			t.awaitNoServiceImport()
 
@@ -237,5 +239,4 @@ var _ = Describe("ServiceImport syncing", func() {
 			t.awaitServiceImport()                                             // ensure import is synced to clusters
 		})
 	})
-
 })

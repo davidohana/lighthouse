@@ -48,8 +48,8 @@ var _ = Describe("Cleanup", func() {
 		test.CreateResource(t.cluster2.dynamicServiceClient().Namespace(t.service.Namespace), t.service)
 		test.CreateResource(t.cluster1.serviceExportClient, t.serviceExport)
 		test.CreateResource(t.cluster2.serviceExportClient, t.serviceExport)
-		test.CreateResource(t.dynamicEndpointsClient(t.cluster1), t.endpoints)
-		test.CreateResource(t.dynamicEndpointsClient(t.cluster2), t.endpoints)
+		test.CreateResource(t.dynamicEndpointsClient(&t.cluster1), t.endpoints)
+		test.CreateResource(t.dynamicEndpointsClient(&t.cluster2), t.endpoints)
 		test.CreateResource(t.brokerServiceImportClient, t.serviceImportCluster1)
 		test.CreateResource(t.brokerServiceImportClient, t.serviceImportCluster2)
 
@@ -106,5 +106,4 @@ var _ = Describe("Cleanup", func() {
 		t.awaitBrokerEndpointSlice(clusterID2)
 		t.awaitLocalEndpointSlice(t.cluster2.endpointSliceClient, clusterID2)
 	})
-
 })

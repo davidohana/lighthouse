@@ -20,6 +20,7 @@ package controller
 import (
 	"context"
 	"fmt"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/submariner-io/admiral/pkg/log"
@@ -61,7 +62,7 @@ type AgentConfig struct {
 }
 
 var (
-	// MaxExportStatusConditions Maximum number of conditions to keep in ServiceExport.Status at the spoke (FIFO)
+	// MaxExportStatusConditions Maximum number of conditions to keep in ServiceExport.Status at the spoke (FIFO).
 	MaxExportStatusConditions = 10
 	logger                    = logf.Log.WithName("agent")
 )
@@ -172,9 +173,10 @@ func New(spec *AgentSpecification, syncerConf broker.SyncerConfig, kubeClientSet
 		return nil, errors.Wrap(err, "error creating ServiceExport Status Downloader")
 	}
 
-	// this syncer syncs changes in broker's service imports into the local operator namespace
 	// create a federator to store imports in the operator namespace
 	serviceImportLocalFederator := broker.NewFederator(syncerConf.LocalClient, syncerConf.RestMapper, spec.Namespace, "")
+
+	// this syncer syncs changes in broker's service imports into the local operator namespace
 	agentController.serviceImportDownloader, err = syncer.NewResourceSyncer(&syncer.ResourceSyncerConfig{
 		Name:            "ServiceImport Downloader",
 		LocalClusterID:  spec.ClusterID,
@@ -232,31 +234,37 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	agentLogger.Info("Starting Agent controller")
 
 	agentLogger.V(log.DEBUG).Info("Starting ServiceExport uploader")
+
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
 	}
 
 	agentLogger.V(log.DEBUG).Info("Starting ServiceExport status downloader")
+
 	if err := a.serviceExportStatusDownloader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport status downloader")
 	}
 
 	agentLogger.V(log.DEBUG).Info("Starting Service syncer")
+
 	if err := a.serviceSyncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting Service syncer")
 	}
 
 	agentLogger.V(log.DEBUG).Info("Starting EndpointSlice syncer")
+
 	if err := a.endpointSliceSyncer.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting EndpointSlice syncer")
 	}
 
 	agentLogger.V(log.DEBUG).Info("Starting ServiceImport downloader")
+
 	if err := a.serviceImportDownloader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceImport downloader")
 	}
 
 	agentLogger.V(log.DEBUG).Info("Starting ServiceImport controller")
+
 	if err := a.serviceImportController.start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceImport controller")
 	}
@@ -264,6 +272,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// check on startup if a local service export still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service export, to delete obsolete service export from the broker
 	agentLogger.V(log.DEBUG).Info("Checking for ServiceExport-less ServiceExports on the broker")
+
 	a.serviceExportUploader.Reconcile(func() []runtime.Object {
 		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
 			annotations := se.GetAnnotations()
@@ -277,6 +286,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// check on startup if a local service still exist for all remote service exports uploaded from this cluster.
 	// if not - enqueue deletion of the service, to delete obsolete service export from the broker
 	agentLogger.V(log.DEBUG).Info("Checking for service-less ServiceExports on the broker")
+
 	a.serviceSyncer.Reconcile(func() []runtime.Object {
 		return a.remoteServiceExportLister(func(se *mcsv1a1.ServiceExport) runtime.Object {
 			// only care about service exports that originated from this cluster
@@ -296,6 +306,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	// check on startup if a remote service import still exist for all local service imports downloaded from the broker.
 	// if not - enqueue deletion of the service import, to delete obsolete service imports locally
 	agentLogger.V(log.DEBUG).Info("Checking for stale local ServiceImports")
+
 	a.serviceImportDownloader.Reconcile(a.localServiceImportLister)
 
 	agentLogger.Info("Agent controller started")
@@ -305,7 +316,6 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 
 func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.ServiceExport) runtime.Object) []runtime.Object {
 	brokerSeList, err := a.serviceExportStatusDownloader.ListResources()
-
 	if err != nil {
 		logger.Error(err, "Error listing broker's ServiceExports")
 		return nil
@@ -316,8 +326,7 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 	for _, obj := range brokerSeList {
 		se := obj.(*mcsv1a1.ServiceExport)
 
-		var transformed runtime.Object
-		transformed = transform(se)
+		transformed := transform(se)
 		if transformed != nil {
 			retList = append(retList, transformed)
 		}
@@ -327,10 +336,10 @@ func (a *Controller) remoteServiceExportLister(transform func(si *mcsv1a1.Servic
 }
 
 func (a *Controller) localServiceImportLister() []runtime.Object {
-	// list local service imports in the operator namespace
 	client := a.localClient.Resource(serviceImportGVR).Namespace(a.namespace)
-	siList, err := client.List(context.TODO(), metav1.ListOptions{})
 
+	// list local service imports in the operator namespace
+	siList, err := client.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		logger.Error(err, "Error listing ServiceImports")
 		return nil
@@ -352,7 +361,8 @@ func (a *Controller) localServiceImportLister() []runtime.Object {
 	return retList
 }
 
-func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
+func (a *Controller) serviceExportUploadTransform(
+	serviceExportObj runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 	localServiceExport := serviceExportObj.(*mcsv1a1.ServiceExport)
 
 	seLog := logger.WithValues("name", localServiceExport.Namespace+"/"+localServiceExport.Name)
@@ -418,7 +428,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 		return nil, false
 	}
 
-	//TODO: preserve additional information required for globalnet
+	// TODO: preserve additional information required for globalnet
 
 	a.updateExportedServiceStatus(localServiceExport.Name, localServiceExport.Namespace,
 		mcsv1a1.ServiceExportValid, corev1.ConditionFalse, ReasonAwaitingSync,
@@ -429,7 +439,7 @@ func (a *Controller) serviceExportUploadTransform(serviceExportObj runtime.Objec
 	return brokerServiceExport, false
 }
 
-// check whether a broker's service export originates from the local cluster
+// check whether a broker's service export originates from the local cluster.
 func (a *Controller) isRemoteServiceExportOwned(se *mcsv1a1.ServiceExport) bool {
 	return se.GetLabels()[lhconstants.LighthouseLabelSourceCluster] == a.clusterID
 }
@@ -470,7 +480,8 @@ func (a *Controller) serviceExportDownloadTransform(obj runtime.Object, numReque
 	return nil, false
 }
 
-func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
+func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus,
+	conditionType mcsv1a1.ServiceExportConditionType) *mcsv1a1.ServiceExportCondition {
 	for i := range status.Conditions {
 		// iterate in reverse to get the last condition of the requested type
 		// (assuming new conditions are appended at the end of slice)
@@ -479,6 +490,7 @@ func GetServiceExportCondition(status *mcsv1a1.ServiceExportStatus, conditionTyp
 			return &c
 		}
 	}
+
 	return nil
 }
 
@@ -544,7 +556,6 @@ func (a *Controller) serviceToRemoteServiceExport(svcObj runtime.Object, numRequ
 func (a *Controller) updateExportedServiceStatus(name, namespace string,
 	conditionType mcsv1a1.ServiceExportConditionType, status corev1.ConditionStatus,
 	reason ServiceExportConditionReason, msg string) {
-
 	seLog := logger.WithValues("name", namespace+"/"+name)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {

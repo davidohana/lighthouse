@@ -23,14 +23,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/submariner-io/admiral/pkg/log"
-	"github.com/submariner-io/admiral/pkg/log/kzerolog"
-	"github.com/submariner-io/admiral/pkg/resource"
-	"github.com/submariner-io/lighthouse/pkg/lhutil"
-	"k8s.io/klog"
 	"math/big"
 	"reflect"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"testing"
 	"time"
@@ -38,10 +32,14 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/submariner-io/admiral/pkg/fake"
+	"github.com/submariner-io/admiral/pkg/log"
+	"github.com/submariner-io/admiral/pkg/log/kzerolog"
+	"github.com/submariner-io/admiral/pkg/resource"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
 	"github.com/submariner-io/admiral/pkg/syncer/test"
 	"github.com/submariner-io/lighthouse/pkg/agent/controller"
 	lhconstants "github.com/submariner-io/lighthouse/pkg/constants"
+	"github.com/submariner-io/lighthouse/pkg/lhutil"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,6 +52,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	fakeKubeClient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	mcsv1a1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 )
 
@@ -77,8 +77,6 @@ var (
 
 func init() {
 	logLevel := log.DEBUG
-	//logLevel := log.LIBTRACE
-	//logLevel := log.TRACE
 	args := []string{fmt.Sprintf("-v=%d", logLevel)}
 	// set logging verbosity of agent in unit test to DEBUG
 	flags := flag.NewFlagSet("kzerolog", flag.ExitOnError)
@@ -134,6 +132,7 @@ type testDriver struct {
 
 func newTestDriver() *testDriver {
 	logger.Info("Creating test driver")
+
 	syncerScheme := runtime.NewScheme()
 	Expect(corev1.AddToScheme(syncerScheme)).To(Succeed())
 	Expect(discovery.AddToScheme(syncerScheme)).To(Succeed())
@@ -271,9 +270,11 @@ func newTestDriver() *testDriver {
 	t.cluster2.init(t.syncerConfig)
 
 	logger.Info("Created test driver")
+
 	return t
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func (t *testDriver) newGlobalIngressIP(name, ip string) *unstructured.Unstructured {
 	ingressIP := controller.GetGlobalIngressIPObj()
 	ingressIP.SetName(name)
@@ -292,6 +293,7 @@ func (t *testDriver) newGlobalIngressIP(name, ip string) *unstructured.Unstructu
 	return ingressIP
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func (t *testDriver) newHeadlessGlobalIngressIP(name, ip string) *unstructured.Unstructured {
 	ingressIP := t.newGlobalIngressIP("pod"+"-"+name, ip)
 	Expect(unstructured.SetNestedField(ingressIP.Object, controller.HeadlessServicePod, "spec", "target")).To(Succeed())
@@ -510,14 +512,14 @@ func (t *testDriver) createEndpointsOnCluster1() {
 	_, err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Create(context.TODO(), t.endpoints, metav1.CreateOptions{})
 	Expect(err).To(Succeed())
 
-	test.CreateResource(t.dynamicEndpointsClient(t.cluster1), t.endpoints)
+	test.CreateResource(t.dynamicEndpointsClient(&t.cluster1), t.endpoints)
 }
 
 func (t *testDriver) deleteEndpointsOnCluster1() {
 	err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
 	Expect(err).To(Succeed())
 
-	err = t.dynamicEndpointsClient(t.cluster1).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
+	err = t.dynamicEndpointsClient(&t.cluster1).Delete(context.TODO(), t.endpoints.Name, metav1.DeleteOptions{})
 	Expect(err).To(Succeed())
 }
 
@@ -525,10 +527,10 @@ func (t *testDriver) updateEndpoints() {
 	_, err := t.cluster1.kubeClient.CoreV1().Endpoints(t.endpoints.Namespace).Update(context.TODO(), t.endpoints, metav1.UpdateOptions{})
 	Expect(err).To(Succeed())
 
-	test.UpdateResource(t.dynamicEndpointsClient(t.cluster1), t.endpoints)
+	test.UpdateResource(t.dynamicEndpointsClient(&t.cluster1), t.endpoints)
 }
 
-func (t *testDriver) dynamicEndpointsClient(cluster cluster) dynamic.ResourceInterface {
+func (t *testDriver) dynamicEndpointsClient(cluster *cluster) dynamic.ResourceInterface {
 	return cluster.dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "endpoints"}).Namespace(t.service.Namespace)
 }
 
@@ -548,10 +550,12 @@ func (t *testDriver) deleteService() {
 		metav1.DeleteOptions{})).To(Succeed())
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func (t *testDriver) createGlobalIngressIP(ingressIP *unstructured.Unstructured) {
 	test.CreateResource(t.cluster1.ingressIPClient, ingressIP)
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func (t *testDriver) createEndpointIngressIPs() {
 	t.endpointGlobalIPs = []string{globalIP1, globalIP2, globalIP3}
 	t.createGlobalIngressIP(t.newHeadlessGlobalIngressIP("one", globalIP1))
@@ -590,7 +594,6 @@ func (t *testDriver) awaitLocalServiceExport(cond *mcsv1a1.ServiceExportConditio
 
 func (t *testDriver) getBrokerServiceName() string {
 	return controller.GetObjectNameWithClusterID(t.service.Name, t.service.Namespace, clusterID1)
-
 }
 
 func (t *testDriver) awaitBrokerServiceExport(cond *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
@@ -598,8 +601,10 @@ func (t *testDriver) awaitBrokerServiceExport(cond *mcsv1a1.ServiceExportConditi
 	return t.awaitServiceExport(t.brokerServiceExportClient, exportNameOnBroker, cond)
 }
 
-func (t *testDriver) awaitServiceExport(client *fake.DynamicResourceClient, exportName string, expectedCondition *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
+func (t *testDriver) awaitServiceExport(client *fake.DynamicResourceClient, exportName string,
+	expectedCondition *mcsv1a1.ServiceExportCondition) *mcsv1a1.ServiceExport {
 	var serviceExportFound *mcsv1a1.ServiceExport
+
 	err := wait.PollImmediate(50*time.Millisecond, 5*time.Second, func() (bool, error) {
 		obj, err := client.Get(context.TODO(), exportName, metav1.GetOptions{})
 		if err != nil {
@@ -634,7 +639,6 @@ func (t *testDriver) awaitServiceExport(client *fake.DynamicResourceClient, expo
 
 		return true, nil
 	})
-
 	if err != nil {
 		Fail(fmt.Sprintf("ServiceExport named %s did not reach expected state:\n"+
 			"%s\n"+
@@ -646,7 +650,7 @@ func (t *testDriver) awaitServiceExport(client *fake.DynamicResourceClient, expo
 }
 
 func (t *testDriver) awaitServiceExported() {
-	condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionTrue, controller.ReasonEmpty)
+	condition := newServiceExportValidityCondition(corev1.ConditionTrue, controller.ReasonEmpty)
 	t.awaitLocalServiceExport(condition)
 
 	brokerExport := t.awaitBrokerServiceExport(nil)
@@ -658,16 +662,19 @@ func (t *testDriver) awaitServiceExported() {
 }
 
 func (t *testDriver) awaitServiceUnavailableStatus() {
-	condition := newServiceExportCondition(mcsv1a1.ServiceExportValid, corev1.ConditionFalse, controller.ReasonServiceUnavailable)
+	condition := newServiceExportValidityCondition(corev1.ConditionFalse, controller.ReasonServiceUnavailable)
 	t.awaitLocalServiceExport(condition)
 }
 
 func getEndpointIPs(endpoints *corev1.Endpoints) []string {
-	var ips []string
+	//goland:noinspection GoPreferNilSlice
+	ips := []string{}
 	subset := endpoints.Subsets[0]
+
 	for _, a := range subset.Addresses {
 		ips = append(ips, a.IP)
 	}
+
 	for _, a := range subset.NotReadyAddresses {
 		ips = append(ips, a.IP)
 	}
@@ -675,11 +682,12 @@ func getEndpointIPs(endpoints *corev1.Endpoints) []string {
 	return ips
 }
 
-func newServiceExportCondition(condType mcsv1a1.ServiceExportConditionType,
-	status corev1.ConditionStatus, reason controller.ServiceExportConditionReason) *mcsv1a1.ServiceExportCondition {
-	return lhutil.CreateServiceExportCondition(condType, status, string(reason), "")
+func newServiceExportValidityCondition(status corev1.ConditionStatus,
+	reason controller.ServiceExportConditionReason) *mcsv1a1.ServiceExportCondition {
+	return lhutil.CreateServiceExportCondition(mcsv1a1.ServiceExportValid, status, string(reason), "")
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func setIngressIPConditions(ingressIP *unstructured.Unstructured, conditions ...metav1.Condition) {
 	var err error
 
@@ -692,6 +700,7 @@ func setIngressIPConditions(ingressIP *unstructured.Unstructured, conditions ...
 	Expect(unstructured.SetNestedSlice(ingressIP.Object, condObjs, "status", "conditions")).To(Succeed())
 }
 
+// nolint:unused  // remove when globalnet support is re-enabled
 func setIngressAllocatedIP(ingressIP *unstructured.Unstructured, ip string) {
 	Expect(unstructured.SetNestedField(ingressIP.Object, ip, "status", "allocatedIP")).To(Succeed())
 }
@@ -728,6 +737,7 @@ func (t *testDriver) awaitServiceImportOnClient(client dynamic.ResourceInterface
 
 	Expect(reflect.DeepEqual(serviceImport.Spec, t.serviceImportCluster1.Spec)).To(BeTrue())
 	Expect(reflect.DeepEqual(serviceImport.Status, t.serviceImportCluster1.Status)).To(BeTrue())
+
 	return serviceImport
 }
 
