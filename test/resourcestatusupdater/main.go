@@ -22,6 +22,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -50,6 +51,7 @@ func main() {
 	flagset.StringVar(&seNamespace, "namespace", seNamespace, "namespace of service export")
 	flagset.StringVar(&seName, "name", seName, "name of service export")
 	flag.Parse()
+
 	if help {
 		flag.PrintDefaults()
 		return
