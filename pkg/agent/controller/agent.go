@@ -231,7 +231,7 @@ func (a *Controller) Start(stopCh <-chan struct{}) error {
 	agentLogger := logger.WithValues("ClusterID", a.clusterID)
 	agentLogger.Info("Starting Agent controller")
 
-	agentLogger.V(log.DEBUG).Info("Starting Agent controller")
+	agentLogger.V(log.DEBUG).Info("Starting ServiceExport uploader")
 	if err := a.serviceExportUploader.Start(stopCh); err != nil {
 		return errors.Wrap(err, "error starting ServiceExport uploader")
 	}

@@ -20,6 +20,8 @@ package controller
 
 import (
 	"context"
+	"reflect"
+	"strings"
 
 	"github.com/pkg/errors"
 	lhconstants "github.com/submariner-io/lighthouse/pkg/constants"
@@ -35,25 +37,29 @@ var (
 	serviceExportGVR = schema.GroupVersionResource{
 		Group:    mcsv1a1.GroupName,
 		Version:  mcsv1a1.GroupVersion.Version,
-		Resource: "serviceexports",
+		Resource: getPluralTypeName(mcsv1a1.ServiceExport{}),
 	}
 
 	serviceImportGVR = schema.GroupVersionResource{
 		Group:    mcsv1a1.GroupName,
 		Version:  mcsv1a1.GroupVersion.Version,
-		Resource: "serviceimports",
+		Resource: getPluralTypeName(mcsv1a1.ServiceImport{}),
 	}
 
 	endpointSliceGVR = schema.GroupVersionResource{
 		Group:    discovery.GroupName,
 		Version:  discovery.SchemeGroupVersion.Version,
-		Resource: "endpointslices",
+		Resource: getPluralTypeName(discovery.EndpointSlice{}),
 	}
 )
 
+func getPluralTypeName(obj interface{}) string {
+	return strings.ToLower(reflect.TypeOf(obj).Name()) + "s"
+}
+
 func (a *Controller) Cleanup() error {
 	notInBrokerNamespace := fields.OneTermNotEqualSelector("metadata.namespace", a.brokerNamespace).String()
-	listOptionsFilterByLHSorceClusterLabel := metav1.ListOptions{
+	listOptionsFilterByLHSourceClusterLabel := metav1.ListOptions{
 		LabelSelector: labels.Set(map[string]string{lhconstants.LighthouseLabelSourceCluster: a.clusterID}).String(),
 	}
 	delOptions := metav1.DeleteOptions{}
@@ -69,7 +75,7 @@ func (a *Controller) Cleanup() error {
 
 	logger.Info("Deleting all ServiceExports originated from this cluster from the broker")
 	err = a.brokerClient.Resource(serviceExportGVR).Namespace(a.brokerNamespace).DeleteCollection(
-		context.TODO(), delOptions, listOptionsFilterByLHSorceClusterLabel)
+		context.TODO(), delOptions, listOptionsFilterByLHSourceClusterLabel)
 	if err != nil {
 		return errors.Wrap(err, "error deleting remote ServiceExports")
 	}
