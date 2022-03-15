@@ -74,6 +74,7 @@ func getLogVerbosity() string {
 	}
 
 	defaultLoggingLevel := log.LIBDEBUG
+
 	return strconv.Itoa(defaultLoggingLevel)
 }
 
