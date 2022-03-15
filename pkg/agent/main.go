@@ -21,9 +21,9 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -62,17 +62,24 @@ func exitOnError(err error, reason string) {
 	os.Exit(255)
 }
 
-func main() {
-	// Handle environment variables:
-	// SUBMARINER_VERBOSITY determines the verbosity level (1 by default)
-	// SUBMARINER_DEBUG, if set to true, sets the verbosity level to 3
-	if debug := os.Getenv("SUBMARINER_DEBUG"); debug == "true" {
-		os.Args = append(os.Args, fmt.Sprintf("-v=%d", log.LIBDEBUG))
-	} else if verbosity := os.Getenv("SUBMARINER_VERBOSITY"); verbosity != "" {
-		os.Args = append(os.Args, fmt.Sprintf("-v=%s", verbosity))
-	} else {
-		os.Args = append(os.Args, fmt.Sprintf("-v=%d", log.LIBTRACE)) // todo: revert to DEBUG
+func getLogVerbosity() string {
+	envDebug := os.Getenv("SUBMARINER_DEBUG")
+	if envDebug == "true" {
+		return strconv.Itoa(log.LIBDEBUG)
 	}
+
+	envVerbosity := os.Getenv("SUBMARINER_VERBOSITY")
+	if envVerbosity != "" {
+		return envVerbosity
+	}
+
+	defaultLoggingLevel := log.LIBDEBUG
+	return strconv.Itoa(defaultLoggingLevel)
+}
+
+func main() {
+	loggingLevel := getLogVerbosity()
+	os.Args = append(os.Args, "-v="+loggingLevel)
 
 	kzerolog.AddFlags(nil)
 	flag.Parse()
